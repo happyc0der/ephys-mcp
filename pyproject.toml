@@ -1,0 +1,43 @@
+[project]
+name = "ephys-mcp"
+version = "0.1.0"
+description = "MCP server for read-only analysis of intracortical (spike-level) brain-computer-interface recordings"
+license = "CC0-1.0"
+keywords = ["mcp", "bci", "electrophysiology", "neuroscience", "spikes"]
+readme = "README.md"
+authors = [
+    { name = "happyc0der", email = "Keshav.Rajput4@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "h5py>=3.16.0",
+    "httpx>=0.28.1",
+    "mcp[cli]>=2.2.0",
+    "numpy>=2.5.3",
+    "pynwb>=4.2.0",
+    "remfile>=0.1.14",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+ephys-mcp = "ephys_mcp.server:main"
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.8",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = ["network: needs internet access to the DANDI Archive"]
+addopts = "-m 'not network'"
+filterwarnings = ["ignore::UserWarning:hdmf", "ignore::UserWarning:pynwb"]
