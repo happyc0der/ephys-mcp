@@ -10,12 +10,14 @@ from __future__ import annotations
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 
-from .base import NeuralSource, SessionInfo
+from .base import NeuralSource, SessionInfo, describe_trials
 
 RAW_FS = 20_000.0
 BEHAVIOR_FS = 100.0
 NOISE_UV = 10.0
 SPIKE_AMP_UV = -80.0
+ONSET_SPEED = 15.0  # cm/s; an upward crossing marks a movement onset
+DIRECTIONS = np.array(["right", "up", "left", "down"])
 
 
 def _spike_template(fs: float) -> np.ndarray:
@@ -57,6 +59,21 @@ class SyntheticSource(NeuralSource):
             idx = np.repeat(np.arange(n), counts[:, u])
             self._spikes.append(np.sort((idx + rng.uniform(0, 1, idx.size)) / BEHAVIOR_FS))
         self._template = _spike_template(RAW_FS)
+        self._trials = self._find_movements()
+
+    def _find_movements(self) -> dict[str, np.ndarray]:
+        speed = np.linalg.norm(self._vel, axis=1)
+        fast = speed > ONSET_SPEED
+        onsets = np.flatnonzero(fast[1:] & ~fast[:-1]) + 1
+        after = int(0.2 * BEHAVIOR_FS)
+        onsets = onsets[(onsets > BEHAVIOR_FS) & (onsets < len(speed) - BEHAVIOR_FS)]
+        onsets = onsets[np.insert(np.diff(onsets) > 0.5 * BEHAVIOR_FS, 0, True)]
+        mean_vel = np.array([self._vel[i : i + after].mean(axis=0) for i in onsets]).reshape(-1, 2)
+        quadrant = np.round(np.arctan2(mean_vel[:, 1], mean_vel[:, 0]) / (np.pi / 2)).astype(int) % 4
+        return {"move_onset_time": self._t[onsets], "direction": DIRECTIONS[quadrant]}
+
+    def trials(self) -> dict[str, np.ndarray]:
+        return self._trials
 
     def info(self) -> SessionInfo:
         return SessionInfo(
@@ -68,8 +85,11 @@ class SyntheticSource(NeuralSource):
             has_sorted_spikes=True,
             behavior_signals={"cursor_velocity": 2, "cursor_position": 2},
             behavior_fs_hz=BEHAVIOR_FS,
+            behavior_units={"cursor_velocity": "cm/s", "cursor_position": "cm"},
             license="CC0-1.0 (generated)",
-            notes="Simulated data. One unit per channel, cosine-tuned to cursor velocity.",
+            notes="Simulated data. One unit per channel, cosine-tuned to cursor velocity. "
+            "Trials are detected movement onsets, grouped by reach direction.",
+            **describe_trials(self._trials),
         )
 
     def _clip(self, t0: float, t1: float) -> tuple[float, float]:

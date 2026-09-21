@@ -11,6 +11,16 @@ from dataclasses import asdict, dataclass, field
 
 import numpy as np
 
+MAX_GROUPS = 8  # one validated categorical colour each
+
+
+def describe_trials(trials: dict[str, np.ndarray]) -> dict:
+    """The SessionInfo fields that summarise a trial table."""
+    n = len(next(iter(trials.values()), []))
+    events = [k for k in trials if k.endswith("_time")]
+    groups = [k for k, v in trials.items() if k not in events and 1 < len(np.unique(v)) <= MAX_GROUPS]
+    return {"n_trials": n, "event_columns": events, "group_columns": groups}
+
 
 @dataclass
 class SessionInfo:
@@ -28,6 +38,9 @@ class SessionInfo:
     t_start_s: float = 0.0  # session times run from t_start_s to t_start_s + duration_s
     behavior_units: dict[str, str] = field(default_factory=dict)
     recorded_fraction: float = 1.0  # share of the session covered by valid_intervals
+    n_trials: int = 0
+    event_columns: list[str] = field(default_factory=list)  # trial columns holding event times
+    group_columns: list[str] = field(default_factory=list)  # trial columns usable to group trials
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -64,6 +77,10 @@ class NeuralSource(ABC):
         """
         info = self.info()
         return np.array([[info.t_start_s, info.t_start_s + info.duration_s]])
+
+    def trials(self) -> dict[str, np.ndarray]:
+        """Trial table as equal-length 1D columns. Columns of event times end in `_time`."""
+        return {}
 
     def close(self) -> None:
         pass

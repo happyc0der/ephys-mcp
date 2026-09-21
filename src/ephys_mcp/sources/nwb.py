@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from .base import NeuralSource, SessionInfo
+from .base import NeuralSource, SessionInfo, describe_trials
 
 MAX_RAW_S = 10.0
 
@@ -68,6 +68,16 @@ class NwbSource(NeuralSource):
             if "obs_intervals" in nwb.units.colnames and len(nwb.units):
                 self._valid = np.asarray(nwb.units["obs_intervals"][0], dtype=float).reshape(-1, 2)
 
+        self._trials: dict[str, np.ndarray] = {}
+        if nwb.trials is not None:
+            for name in nwb.trials.colnames:
+                col = nwb.trials[name]
+                if hasattr(col, "target"):  # ragged column
+                    continue
+                values = np.asarray(col.data[:])
+                if values.ndim == 1 and values.dtype.kind in "biufUSO":
+                    self._trials[name] = values.astype(str) if values.dtype.kind in "SO" else values
+
         self._behavior = _behavior_series(nwb)
         self._timestamps: dict[str, np.ndarray] = {}
         self._raw = next((a for a in nwb.acquisition.values() if isinstance(a, ElectricalSeries)), None)
@@ -110,8 +120,6 @@ class NwbSource(NeuralSource):
         first = next(iter(self._behavior.values()), None)
         valid = self.valid_intervals()
         notes = [f"NWB session: {(nwb.session_description or '').strip()[:200]}"]
-        if nwb.trials is not None:
-            notes.append(f"{len(nwb.trials)} trials; columns: {', '.join(nwb.trials.colnames[:12])}")
         if self._raw is None:
             notes.append("No broadband signal: sorted units only, so raw-signal tools are unavailable.")
         return SessionInfo(
@@ -129,12 +137,16 @@ class NwbSource(NeuralSource):
             t_start_s=round(self._t0, 3),
             behavior_units={k: str(v.unit) for k, v in self._behavior.items()},
             recorded_fraction=round(float((valid[:, 1] - valid[:, 0]).sum() / (self._t1 - self._t0)), 3),
+            **describe_trials(self._trials),
         )
 
     def valid_intervals(self) -> np.ndarray:
         if self._valid is not None:
             return self._valid
         return np.array([[self._t0, self._t1]])
+
+    def trials(self) -> dict[str, np.ndarray]:
+        return self._trials
 
     def spike_times(self, t0: float, t1: float) -> list[np.ndarray]:
         if not self._spikes:
