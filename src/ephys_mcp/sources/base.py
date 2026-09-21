@@ -38,6 +38,7 @@ class SessionInfo:
     t_start_s: float = 0.0  # session times run from t_start_s to t_start_s + duration_s
     behavior_units: dict[str, str] = field(default_factory=dict)
     recorded_fraction: float = 1.0  # share of the session covered by valid_intervals
+    amplitude_unit: str = "uV"  # unit of read_raw values; uncalibrated sources say so
     n_trials: int = 0
     event_columns: list[str] = field(default_factory=list)  # trial columns holding event times
     group_columns: list[str] = field(default_factory=list)  # trial columns usable to group trials

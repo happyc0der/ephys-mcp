@@ -22,7 +22,7 @@ def signal_quality(raw: np.ndarray, fs: float) -> dict:
     med = float(np.median(sigma))
     return {
         "snippet_s": round(dur, 3),
-        "median_noise_uv": round(med, 2),
+        "median_noise": round(med, 2),
         "median_snr": round(float(np.median(snr)), 2),
         "median_threshold_rate_hz": round(float(np.median(rates)), 2),
         "dead_channels": [int(i) for i in np.flatnonzero(sigma < 0.2 * med)],

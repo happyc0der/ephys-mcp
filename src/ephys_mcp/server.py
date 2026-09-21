@@ -154,7 +154,7 @@ def get_signal_quality(session_id: str, t0: float = 0.0, duration_s: float = 2.0
     if info.raw_fs_hz is None:
         raise ValueError("this session has no broadband signal")
     raw = src.read_raw(t0, t0 + min(duration_s, 10.0))
-    return signal_quality(raw, info.raw_fs_hz)
+    return {**signal_quality(raw, info.raw_fs_hz), "amplitude_unit": info.amplitude_unit}
 
 
 @tool
@@ -175,7 +175,8 @@ def detect_spikes(session_id: str, t0: float = 0.0, duration_s: float = 2.0, thr
         "threshold_sigma": threshold_sigma,
         "total_spikes": int(counts.sum()),
         "median_rate_hz": round(float(np.median(counts) / (t1 - t0)), 2),
-        "median_noise_uv": round(float(np.median(sigma)), 2),
+        "median_noise": round(float(np.median(sigma)), 2),
+        "amplitude_unit": info.amplitude_unit,
     }
     if info.has_sorted_spikes:
         truth = src.spike_times(t0, t1)

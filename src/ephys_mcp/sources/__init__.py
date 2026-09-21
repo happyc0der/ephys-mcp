@@ -3,6 +3,7 @@ from .dandi import DandiSource
 from .n1_stub import N1StubSource
 from .nwb import NwbSource
 from .synthetic import SyntheticSource
+from .wavdir import WavDirSource
 
 SOURCES: dict[str, dict] = {
     "synthetic": {
@@ -16,6 +17,13 @@ SOURCES: dict[str, dict] = {
         "status": "available",
         "description": "A local Neurodata Without Borders (.nwb) file. Requires params.path.",
         "params": {"path": ""},
+    },
+    "wav_dir": {
+        "cls": WavDirSource,
+        "status": "available",
+        "description": "Local broadband WAV: a folder of mono clips (one channel each) or one multi-channel file. "
+        "Requires params.path. Set uv_per_count to report microvolts instead of ADC counts.",
+        "params": {"path": "", "max_files": 64, "uv_per_count": 0.0},
     },
     "dandi": {
         "cls": DandiSource,
@@ -32,4 +40,13 @@ SOURCES: dict[str, dict] = {
     },
 }
 
-__all__ = ["SOURCES", "DandiSource", "N1StubSource", "NeuralSource", "NwbSource", "SessionInfo", "SyntheticSource"]
+__all__ = [
+    "SOURCES",
+    "DandiSource",
+    "N1StubSource",
+    "NeuralSource",
+    "NwbSource",
+    "SessionInfo",
+    "SyntheticSource",
+    "WavDirSource",
+]

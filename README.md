@@ -9,7 +9,7 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 
 ## Status
 
-v0.1, early. Working today: local NWB files, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, and figures. Planned: WAV-directory input, PyPI release.
+v0.1, early. Working today: local NWB files, local broadband WAV recordings, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, and figures. Planned: PyPI release and registry listings.
 
 ## Install and run
 
@@ -39,10 +39,13 @@ Or offline: *"Open a synthetic session, check signal quality, fit a Kalman decod
 | --- | --- |
 | `synthetic` | Simulated units tuned to cursor velocity, with broadband signal and ground truth |
 | `nwb` | A local `.nwb` file (`params.path`) |
+| `wav_dir` | Local broadband WAV (`params.path`): a folder of mono clips, one channel each, or one multi-channel file |
 | `dandi` | An NWB file streamed from the [DANDI Archive](https://dandiarchive.org) by HTTP range requests; nothing is mirrored |
 | `n1_stub` | Not implemented. Documents the contract for a live implant adapter |
 
 Dataset licence and citation come from the archive and are returned by `open_session`, so the model can attribute the data. Many datasets record only during trials; the server tracks those spans (`recorded_fraction`) and leaves the gaps out of rates and decoding instead of reading them as silence.
+
+WAV samples carry no physical unit, so amplitudes are reported as ADC counts unless you pass `uv_per_count`; every amplitude result names its unit. Clips in a folder are separate recordings, so the server says that timing across those channels is not meaningful. Spike times from WAV are threshold crossings, not sorted units.
 
 Reference result on MC_Maze_Small (DANDI 000140, 142 units, last 20% held out, 50 ms bins): ridge R² 0.50, Kalman R² 0.34 for hand velocity. These are simple causal linear baselines, not state of the art.
 

@@ -6,7 +6,7 @@ Rules for source adapters:
 
 1. Real datasets are fetched or opened **by the user at runtime**. They are never committed, mirrored or redistributed here.
 2. Every adapter must populate `SessionInfo.license` and `SessionInfo.citation` so the model can surface attribution to the user.
-3. Datasets with no stated licence may only be read from a path the user supplies. The server must not download them on the user's behalf.
+3. Datasets with no stated licence may only be read from a path the user supplies. The server must not download them on the user's behalf. The `wav_dir` source works this way: it opens local files only and reports their licence as unknown.
 4. Dependencies must be permissively licensed (MIT, BSD, Apache-2.0). No GPL dependencies.
 5. Code contributed here is released under CC0-1.0, so do not paste in code copied from other projects, even permissively licensed ones: their attribution terms cannot be waived by us.
 
