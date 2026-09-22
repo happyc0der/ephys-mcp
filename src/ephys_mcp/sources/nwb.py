@@ -18,14 +18,25 @@ MAX_RAW_S = 10.0
 
 
 def _behavior_series(nwb) -> dict[str, Any]:
-    """Every numeric 1D/2D time series under processing modules, keyed by name."""
+    """Every numeric or boolean 1D/2D time series in processing modules or acquisition, keyed by name.
+
+    Broadband ElectricalSeries are excluded; they are the neural signal, not behaviour.
+    """
     from pynwb import TimeSeries
+    from pynwb.ecephys import ElectricalSeries
 
     found: dict[str, Any] = {}
 
     def visit(obj, prefix: str):
+        if isinstance(obj, ElectricalSeries):
+            return
         if isinstance(obj, TimeSeries):
-            if obj.data is not None and len(obj.data.shape) in (1, 2) and np.issubdtype(obj.data.dtype, np.number):
+            data = obj.data
+            if (
+                data is not None
+                and len(data.shape) in (1, 2)
+                and (np.issubdtype(data.dtype, np.number) or data.dtype == bool)
+            ):
                 found[obj.name if obj.name not in found else f"{prefix}/{obj.name}"] = obj
             return
         for attr in ("spatial_series", "time_series"):
@@ -35,6 +46,8 @@ def _behavior_series(nwb) -> dict[str, Any]:
     for mod_name, mod in nwb.processing.items():
         for iface in mod.data_interfaces.values():
             visit(iface, mod_name)
+    for obj in nwb.acquisition.values():
+        visit(obj, "acquisition")
     return found
 
 
@@ -68,6 +81,13 @@ class NwbSource(NeuralSource):
             if "obs_intervals" in nwb.units.colnames and len(nwb.units):
                 self._valid = np.asarray(nwb.units["obs_intervals"][0], dtype=float).reshape(-1, 2)
 
+        self._rate_fixes: set[str] = set()
+        self._spike_span = (
+            max(s[-1] for s in self._spikes if s.size) - min(s[0] for s in self._spikes if s.size)
+            if any(s.size for s in self._spikes)
+            else 0.0
+        )
+
         self._trials: dict[str, np.ndarray] = {}
         if nwb.trials is not None:
             for name in nwb.trials.colnames:
@@ -99,6 +119,20 @@ class NwbSource(NeuralSource):
         if self._t0 < 1.0:  # sessions that begin near zero are easier to reason about from zero
             self._t0 = 0.0
 
+    def _stored_rate(self, series) -> float:
+        """The series' sampling rate in Hz, correcting files that stored the period instead.
+
+        Some published files put 0.02 (a 20 ms bin) in `rate`. When the rate taken literally
+        implies a duration wildly longer than the spikes span but its reciprocal fits, use that.
+        """
+        rate = float(series.rate)
+        n = series.data.shape[0]
+        span = self._spike_span
+        if span and rate < 1.0 and n / rate > 10 * span and abs(n * rate - span) < 0.5 * span:
+            self._rate_fixes.add(series.name)
+            return 1.0 / rate
+        return rate
+
     def _times(self, series) -> np.ndarray:
         key = series.name
         if key not in self._timestamps:
@@ -106,12 +140,12 @@ class NwbSource(NeuralSource):
                 self._timestamps[key] = np.asarray(series.timestamps[:], dtype=float)
             else:
                 start = series.starting_time or 0.0
-                self._timestamps[key] = start + np.arange(series.data.shape[0]) / series.rate
+                self._timestamps[key] = start + np.arange(series.data.shape[0]) / self._stored_rate(series)
         return self._timestamps[key]
 
     def _rate(self, series) -> float | None:
         if series.rate:
-            return float(series.rate)
+            return round(self._stored_rate(series), 3)
         t = self._times(series)
         return round(float(1.0 / np.median(np.diff(t[:10_000]))), 3) if t.size > 1 else None
 
@@ -122,6 +156,13 @@ class NwbSource(NeuralSource):
         notes = [f"NWB session: {(nwb.session_description or '').strip()[:200]}"]
         if self._raw is None:
             notes.append("No broadband signal: sorted units only, so raw-signal tools are unavailable.")
+        for k in self._behavior:
+            self._times(self._behavior[k])  # so any rate fixes are known before the notes are written
+        if self._rate_fixes:
+            notes.append(
+                f"The file stores a sampling period instead of a rate for {sorted(self._rate_fixes)}; "
+                "the reciprocal was used."
+            )
         return SessionInfo(
             source=self.kind,
             uri=self._uri,

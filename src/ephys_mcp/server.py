@@ -237,16 +237,28 @@ def get_firing_rates(session_id: str, t0: float = 0.0, t1: float | None = None) 
     return {"window_s": [t0, t1], "recorded_s": round(recorded, 2), **stats}
 
 
-def _xy(src: NeuralSource, target: str, t0: float, t1: float, bin_s: float):
+def _xy(src: NeuralSource, target: str, t0: float, t1: float, bin_s: float, mask: str | None = None):
+    """Binned counts and resampled behaviour, keeping only recorded bins (and masked-in bins)."""
     t, counts = bin_spikes(src.spike_times(t0, t1), t0, t1, bin_s)
     bt, bv = src.behavior(target, t0, t1)
     if bt.size < 2:
         raise ValueError("no behaviour samples in that window")
     y = resample_to(bt, bv, t)
     keep = _recorded_mask(src, t, bin_s) & np.isfinite(y).all(axis=1)
+    if mask:
+        mt, mv = src.behavior(mask, t0, t1)
+        if mv.shape[1] != 1:
+            raise ValueError(f"mask {mask!r} must be a one-dimensional boolean signal")
+        keep &= resample_to(mt, mv.astype(float), t)[:, 0] > 0.5
     if keep.sum() < 10:
         raise ValueError("too little recorded data in that window")
     return t[keep], counts[keep], y[keep]
+
+
+def _check_mask(src: NeuralSource, mask: str | None) -> str | None:
+    if mask and mask not in src.info().behavior_signals:
+        raise ValueError(f"unknown mask signal {mask!r}; available: {sorted(src.info().behavior_signals)}")
+    return mask or None
 
 
 @tool
@@ -256,11 +268,14 @@ def fit_decoder(
     target: str | None = None,
     train_fraction: float = 0.8,
     bin_s: float = 0.05,
+    mask: str | None = None,
 ) -> dict:
     """Fit a decoder from spike counts to a behaviour signal and score it on held-out data.
 
     The first `train_fraction` of the session trains; the remainder tests. With no
     `target`, the first velocity-like behaviour signal is used. Unrecorded gaps are skipped.
+    `mask` names a boolean behaviour signal (such as FALCON's eval_mask); only bins where it
+    is true are used for fitting and scoring.
     """
     src = _session(session_id)
     if not 0.1 <= train_fraction <= 0.95:
@@ -268,18 +283,20 @@ def fit_decoder(
     if not 0.005 <= bin_s <= 1.0:
         raise ValueError("bin_s must be in 0.005..1.0")
     target = _pick_target(src, target)
+    mask = _check_mask(src, mask)
     info = src.info()
     start, dur = info.t_start_s, info.t_start_s + info.duration_s
     split = start + info.duration_s * train_fraction
-    _, Xtr, ytr = _xy(src, target, start, split, bin_s)
-    _, Xte, yte = _xy(src, target, split, dur, bin_s)
-    model = DECODERS[kind]().fit(Xtr, ytr)
+    _, Xtr, ytr = _xy(src, target, start, split, bin_s, mask)
+    _, Xte, yte = _xy(src, target, split, dur, bin_s, mask)
+    model = DECODERS[kind](bin_s=bin_s).fit(Xtr, ytr)
     r2 = r2_score(yte, model.predict(Xte))
     _decoders[session_id] = {"model": model, "target": target, "bin_s": bin_s, "kind": kind, "test_start_s": split}
     return {
         "kind": kind,
         "params": model.params,
         "target": target,
+        "mask": mask,
         "bin_s": bin_s,
         "target_unit": info.behavior_units.get(target, ""),
         "n_train_bins": len(Xtr),
@@ -288,6 +305,79 @@ def fit_decoder(
         "test_window_s": [round(split, 2), dur],
         "test_r2_per_dim": [round(float(v), 3) for v in r2],
         "test_r2_mean": round(float(r2.mean()), 3),
+    }
+
+
+@tool
+def evaluate_cross_session(
+    train_session_id: str,
+    test_session_ids: list[str],
+    kind: Literal["ridge", "kalman"] = "ridge",
+    target: str | None = None,
+    bin_s: float = 0.02,
+    mask: str | None = "eval_mask",
+) -> dict:
+    """Fit a decoder on one session and score it, unchanged, on other sessions: the question
+    benchmarks such as FALCON ask (does a decoder survive to a later day?).
+
+    All sessions must be open and share the same units/channels. `mask` names a boolean
+    behaviour signal restricting which bins are scored (FALCON files carry `eval_mask`; pass
+    null when the sessions have none). Also reports same-session held-out R² for comparison.
+    """
+    train = _session(train_session_id)
+    tests = [_session(sid) for sid in test_session_ids]
+    if not tests:
+        raise ValueError("give at least one test session")
+    if not 0.005 <= bin_s <= 1.0:
+        raise ValueError("bin_s must be in 0.005..1.0")
+    target = _pick_target(train, target)
+    signals = train.info().behavior_signals
+    if mask == "eval_mask" and mask not in signals:
+        mask = None  # the default only applies where the file provides it
+    mask = _check_mask(train, mask)
+    n_units = train.info().n_channels
+    for sid, src in zip(test_session_ids, tests):
+        if src.info().n_channels != n_units:
+            raise ValueError(f"session {sid} has {src.info().n_channels} units, training session has {n_units}")
+        if target not in src.info().behavior_signals:
+            raise ValueError(f"session {sid} has no behaviour signal {target!r}")
+        _check_mask(src, mask)
+
+    def whole(src):
+        i = src.info()
+        return _xy(src, target, i.t_start_s, i.t_start_s + i.duration_s, bin_s, mask)
+
+    _, X, y = whole(train)
+    cut = int(0.8 * len(y))
+    same_day = r2_score(y[cut:], DECODERS[kind](bin_s=bin_s).fit(X[:cut], y[:cut]).predict(X[cut:]))
+    model = DECODERS[kind](bin_s=bin_s).fit(X, y)
+    results = []
+    for sid, src in zip(test_session_ids, tests):
+        _, Xt, yt = whole(src)
+        r2 = r2_score(yt, model.predict(Xt))
+        results.append(
+            {
+                "session_id": sid,
+                "uri": src.info().uri,
+                "n_bins_scored": len(yt),
+                "r2_per_dim": [round(float(v), 3) for v in r2],
+                "r2_mean": round(float(r2.mean()), 3),
+            }
+        )
+    return {
+        "kind": kind,
+        "params": model.params,
+        "target": target,
+        "mask": mask,
+        "bin_s": bin_s,
+        "n_units": n_units,
+        "train": {"session_id": train_session_id, "uri": train.info().uri, "n_bins": len(y)},
+        "train_tail_r2_mean": round(float(same_day.mean()), 3),
+        "transfer": results,
+        "note": "train_tail_r2_mean is a fit on the first 80% of the training session scored on its last 20%; "
+        "a same-day minival session is the better same-day comparison. Ridge is the sensible baseline here; "
+        "the Kalman filter assumes shared linear dynamics and fails on scripted open-loop calibration data. "
+        "FALCON's official held-out test labels are private, so this is not a leaderboard score.",
     }
 
 
@@ -512,6 +602,22 @@ def analyze_session(session_id: str) -> str:
         "If a cursor or hand velocity signal exists, fit_decoder with kind='kalman' and with kind='ridge', "
         "compare held-out R², and plot_decoding on a test segment. If the session has trial events, "
         "get_psth and plot_psth grouped by a sensible column. Summarise findings and caveats."
+    )
+
+
+@mcp.prompt()
+def falcon_evaluate(dandiset_id: str = "000954") -> str:
+    """Run a FALCON-style cross-session evaluation on a FALCON dataset from DANDI."""
+    return (
+        f"Evaluate decoder stability across days on DANDI {dandiset_id} (a FALCON benchmark dataset). "
+        "Call list_dataset_files and note the three groups: held-in-calib (training days), held-in-minival "
+        "(small same-day validation) and held-out-calib (later days). Open one held-in-calib file, its "
+        "matching held-in-minival file (same session date in the name), and two or three held-out-calib "
+        "files with open_session(source='dandi'). Then evaluate_cross_session with the calib file as "
+        "train_session_id, the others as test_session_ids, kind='ridge', bin_s=0.02 and mask='eval_mask'. "
+        "Report the minival R² as the same-day reference and each later day's R² against it, per dimension "
+        "where informative. State plainly that FALCON's official test labels are private, so these numbers "
+        "are not leaderboard scores, and cite the dataset from get_session_info."
     )
 
 

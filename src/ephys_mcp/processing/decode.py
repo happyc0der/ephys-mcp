@@ -1,17 +1,21 @@
 """Linear decoders from binned spike counts to a continuous behavioural signal.
 
 Both decoders are causal: the estimate at bin t uses counts up to bin t only.
-Hyperparameters left as None are chosen on the tail of the training data, so
-the caller's test split is never touched.
+Hyperparameters left as None are chosen by blocked cross-validation inside the
+training data (contiguous folds, so autocorrelation cannot leak), and the
+caller's test split is never touched.
 """
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 
-VALIDATION_FRACTION = 0.2
-ALPHAS = (1.0, 10.0, 100.0, 1000.0)
+CV_FOLDS = 5
+ALPHAS = (1.0, 10.0, 100.0, 1000.0, 10000.0)
 LEADS = (0, 1, 2, 3)  # bins by which neural activity leads behaviour
+HISTORY_S = 0.5  # how far back the ridge decoder looks, whatever the bin size
 
 
 def r2_score(y: np.ndarray, yhat: np.ndarray) -> np.ndarray:
@@ -21,9 +25,16 @@ def r2_score(y: np.ndarray, yhat: np.ndarray) -> np.ndarray:
 
 
 def _select(make, candidates, counts: np.ndarray, y: np.ndarray):
-    """Best candidate by R² on the tail of the training data."""
-    cut = int(len(y) * (1 - VALIDATION_FRACTION))
-    scores = [r2_score(y[cut:], make(c)._fit(counts[:cut], y[:cut]).predict(counts[cut:])).mean() for c in candidates]
+    """Best candidate by mean R² over contiguous folds of the training data."""
+    edges = np.linspace(0, len(y), CV_FOLDS + 1).astype(int)
+    scores = []
+    for c in candidates:
+        fold_scores = []
+        for a, b in itertools.pairwise(edges):
+            train = np.r_[0:a, b : len(y)]
+            model = make(c)._fit(counts[train], y[train])
+            fold_scores.append(r2_score(y[a:b], model.predict(counts[a:b])).mean())
+        scores.append(np.mean(fold_scores))
     return candidates[int(np.argmax(scores))]
 
 
@@ -32,12 +43,13 @@ class RidgeDecoder:
 
     kind = "ridge"
 
-    def __init__(self, n_lags: int = 10, alpha: float | None = None):
-        self.n_lags, self.alpha = n_lags, alpha
+    def __init__(self, n_lags: int | None = None, alpha: float | None = None, bin_s: float = 0.05):
+        self.n_lags = n_lags if n_lags is not None else max(1, round(HISTORY_S / bin_s))
+        self.alpha, self.bin_s = alpha, bin_s
 
     @property
     def params(self) -> dict:
-        return {"history_bins": self.n_lags, "alpha": self.alpha}
+        return {"history_bins": self.n_lags, "history_s": round(self.n_lags * self.bin_s, 3), "alpha": self.alpha}
 
     def _design(self, counts: np.ndarray) -> np.ndarray:
         lagged = [np.roll(counts, k, axis=0) for k in range(self.n_lags)]
@@ -54,7 +66,7 @@ class RidgeDecoder:
 
     def fit(self, counts: np.ndarray, y: np.ndarray) -> RidgeDecoder:
         if self.alpha is None:
-            self.alpha = _select(lambda a: RidgeDecoder(self.n_lags, a), ALPHAS, counts, y)
+            self.alpha = _select(lambda a: RidgeDecoder(self.n_lags, a, self.bin_s), ALPHAS, counts, y)
         return self._fit(counts, y)
 
     def predict(self, counts: np.ndarray) -> np.ndarray:
@@ -71,8 +83,8 @@ class KalmanDecoder:
 
     kind = "kalman"
 
-    def __init__(self, lead_bins: int | None = None):
-        self.lead_bins = lead_bins
+    def __init__(self, lead_bins: int | None = None, bin_s: float = 0.05):
+        self.lead_bins, self.bin_s = lead_bins, bin_s
 
     @property
     def params(self) -> dict:
@@ -95,7 +107,7 @@ class KalmanDecoder:
 
     def fit(self, counts: np.ndarray, y: np.ndarray) -> KalmanDecoder:
         if self.lead_bins is None:
-            self.lead_bins = _select(KalmanDecoder, LEADS, counts, y)
+            self.lead_bins = _select(lambda k: KalmanDecoder(k, self.bin_s), LEADS, counts, y)
         return self._fit(counts, y)
 
     def predict(self, counts: np.ndarray) -> np.ndarray:

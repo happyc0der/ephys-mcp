@@ -11,7 +11,7 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 
 ## Status
 
-v0.2, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, and figures. Planned: FALCON evaluation, latent-factor models, probe geometry.
+v0.2, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, and figures. Planned: latent-factor models, probe geometry.
 
 ## Install and run
 
@@ -59,7 +59,12 @@ Dataset licence and citation come from the archive and are returned by `open_ses
 
 WAV samples carry no physical unit, so amplitudes are reported as ADC counts unless you pass `uv_per_count`; every amplitude result names its unit. Clips in a folder are separate recordings, so the server says that timing across those channels is not meaningful. Spike times from WAV are threshold crossings, not sorted units.
 
-Reference result on MC_Maze_Small (DANDI 000140, 142 units, last 20% held out, 50 ms bins): ridge R² 0.50, Kalman R² 0.34 for hand velocity. These are simple causal linear baselines, not state of the art.
+Reference results, all simple causal linear baselines rather than state of the art:
+
+- MC_Maze_Small (DANDI 000140, 142 units, last 20% held out, 50 ms bins): ridge R² 0.50, Kalman R² 0.34 for hand velocity.
+- FALCON H1 (DANDI 000954, human 7-DoF velocity, 176 channels, 20 ms bins, `eval_mask`): ridge trained on the first held-in day scores R² 0.43 on that day's minival, 0.07 one week later and below zero on the held-out days. That decay is the point of the benchmark; the Kalman filter is unsuitable for this scripted calibration data. FALCON's official test labels are private, so these are not leaderboard scores.
+
+Decoder hyperparameters (ridge strength, the neural lead for Kalman) are chosen by blocked cross-validation inside the training split. Ridge history is 0.5 s of spike counts whatever the bin size.
 
 ## Tools
 
@@ -78,12 +83,13 @@ Reference result on MC_Maze_Small (DANDI 000140, 142 units, last 20% held out, 5
 | `get_firing_rates` | Population rate summary |
 | `fit_decoder` | Ridge or Kalman, scored on held-out data; hyperparameters chosen inside the training split |
 | `decode_window` | Decoded-vs-true preview for a window |
+| `evaluate_cross_session` | Fit on one session, score unchanged on others: does a decoder survive to a later day? Honours FALCON's `eval_mask` |
 | `get_psth` | Firing aligned to a trial event, optionally grouped by a trial column or limited to some units |
 | `plot_psth` | Figure: PSTH per group with SEM, above a unit-by-time heatmap of change from baseline |
 | `plot_raster` | Figure: spike raster, unrecorded spans shaded |
 | `plot_decoding` | Figure: decoded against actual behaviour, one panel per dimension |
 
-Resource: `ephys://sessions`. Prompt: `analyze_session`.
+Resource: `ephys://sessions`. Prompts: `analyze_session`, `falcon_evaluate`.
 
 Tools return summaries, never raw arrays, so results fit in a model's context.
 

@@ -16,5 +16,6 @@ The DANDI source reads each dataset's licence and citation from the archive API 
 | --- | --- | --- |
 | MC_Maze_Small (000140) | DANDI Archive | CC-BY-4.0 (verified from the API, 2026-09-21) |
 | MC_Maze (000128), MC_RTT (000129) | DANDI Archive | reported at open time |
+| FALCON H1 (000954), FALCON M1-A (000941) | DANDI Archive | CC-BY-4.0 (verified from the API, 2026-09-22) |
 
 Trademarks: product and company names are used only descriptively. This project is not affiliated with or endorsed by any implant manufacturer.
