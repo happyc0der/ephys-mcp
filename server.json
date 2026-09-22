@@ -3,7 +3,7 @@
   "name": "io.github.happyc0der/ephys-mcp",
   "title": "Ephys",
   "description": "Read-only analysis of intracortical BCI recordings (NWB, DANDI, WAV): spikes, PSTHs, decoding, plots",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "repository": {
     "url": "https://github.com/happyc0der/ephys-mcp",
     "source": "github"
@@ -14,7 +14,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "ephys-mcp",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "runtimeHint": "uvx",
       "transport": { "type": "stdio" }
     }

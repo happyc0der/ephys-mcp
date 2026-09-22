@@ -1,6 +1,6 @@
 [project]
 name = "ephys-mcp"
-version = "0.1.1"
+version = "0.2.0"
 description = "MCP server for read-only analysis of intracortical (spike-level) brain-computer-interface recordings"
 license = "CC0-1.0"
 keywords = ["mcp", "bci", "electrophysiology", "neuroscience", "spikes", "nwb", "dandi"]
