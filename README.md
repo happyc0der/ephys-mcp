@@ -1,5 +1,7 @@
 # ephys-mcp
 
+<!-- mcp-name: io.github.happyc0der/ephys-mcp -->
+
 An [MCP](https://modelcontextprotocol.io) server that lets an LLM analyse **intracortical (spike-level) brain-computer-interface recordings**: signal quality, spike detection, firing rates, and cursor-velocity decoding.
 
 Existing BCI MCP servers target scalp EEG. This one targets the kind of data a high-channel-count implant produces, and defines a read-only adapter contract so a live device backend can be added when a vendor publishes an API.
