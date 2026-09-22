@@ -7,7 +7,6 @@ keywords = ["mcp", "bci", "electrophysiology", "neuroscience", "spikes", "nwb", 
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering",
 ]
@@ -33,7 +32,7 @@ Repository = "https://github.com/happyc0der/ephys-mcp"
 Issues = "https://github.com/happyc0der/ephys-mcp/issues"
 
 [project.scripts]
-ephys-mcp = "ephys_mcp.server:main"
+ephys-mcp = "ephys_mcp.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]

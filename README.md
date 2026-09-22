@@ -31,6 +31,16 @@ Claude Desktop (`claude_desktop_config.json`):
 
 From a checkout, use `uv run ephys-mcp` instead, or `uv --directory /path/to/ephys-mcp run ephys-mcp` in the configs above.
 
+### HTTP transport
+
+For remote clients or hosted agents, serve streamable HTTP instead of stdio:
+
+```bash
+EPHYS_MCP_TOKEN='a-long-random-secret' uvx ephys-mcp --http --host 0.0.0.0 --port 8000
+```
+
+Every request must then carry `Authorization: Bearer <token>`. The server refuses to bind to a non-loopback address without a token, and tokens must be at least 16 characters. Put TLS in front of it (a reverse proxy) before exposing it beyond a private network: the token travels in clear text otherwise. On loopback the token is optional, so `ephys-mcp --http` alone serves `http://127.0.0.1:8000/mcp` for local testing.
+
 Then ask, for real data: *"Find a small motor cortex dataset on DANDI, open it, and tell me how well hand velocity can be decoded."*
 Or offline: *"Open a synthetic session, check signal quality, fit a Kalman decoder and show me a decoded window."*
 
@@ -78,7 +88,7 @@ Plot tools return the PNG inline, so a vision-capable model can read the figure,
 ## Design rules
 
 - **Read-only.** The `NeuralSource` contract has no write, stimulate or configure method. None will be added without a separate safety design.
-- **Local by default.** stdio transport, no telemetry. Neural data is sensitive.
+- **Local by default.** stdio transport, no telemetry. HTTP is opt-in and token-gated. Neural data is sensitive.
 - **No bundled third-party data.** See [DATA_LICENSES.md](DATA_LICENSES.md).
 
 ## Writing a source adapter
