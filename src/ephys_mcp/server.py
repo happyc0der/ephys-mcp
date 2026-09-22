@@ -25,7 +25,9 @@ from .processing.spikes import detect_spikes as _detect_spikes
 from .processing.spikes import match_spikes
 from .sources import SOURCES, NeuralSource
 from .sources import dandi as _dandi
+from .sources import lsl as _lsl
 from .sources.base import MAX_GROUPS
+from .sources.live import RingBufferSource
 
 DISCLAIMER = (
     "Research and education software. Not a medical device, not for clinical use, "
@@ -425,6 +427,25 @@ def plot_decoding(session_id: str, t0: float, duration_s: float = 10.0) -> list:
     unit = src.info().behavior_units.get(d["target"], "")
     path = plots.plot_decode(f"{session_id}-decode", title, t, y, yhat, unit, r2)
     return _figure(path, window_s=[t0, t1], r2_per_dim=[round(float(v), 3) for v in r2], held_out=bool(in_test))
+
+
+@tool
+def list_lsl_streams(wait_s: float = 3.0) -> dict:
+    """Lab Streaming Layer streams visible on the local network (needs the lsl extra)."""
+    streams = _lsl.list_streams(max(0.5, min(wait_s, 10.0)))
+    return {
+        "streams": streams,
+        "hint": "open_session(source='lsl', params={'name': ...}) to subscribe" if streams else "none found",
+    }
+
+
+@tool
+def get_stream_status(session_id: str) -> dict:
+    """For a live session: how much signal is buffered, whether data is still arriving, and drops."""
+    src = _session(session_id)
+    if not isinstance(src, RingBufferSource):
+        raise ValueError("not a live session; this tool applies to lsl sessions")  # noqa: TRY004 - a bad argument, not a type bug
+    return src.status()
 
 
 @tool

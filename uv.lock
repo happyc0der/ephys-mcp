@@ -447,6 +447,11 @@ dependencies = [
     { name = "scipy" },
 ]
 
+[package.optional-dependencies]
+lsl = [
+    { name = "pylsl" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -461,10 +466,12 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.11.2" },
     { name = "mcp", extras = ["cli"], specifier = ">=2.2.0" },
     { name = "numpy", specifier = ">=2.5.3" },
+    { name = "pylsl", marker = "extra == 'lsl'", specifier = ">=1.18.5" },
     { name = "pynwb", specifier = ">=4.2.0" },
     { name = "remfile", specifier = ">=0.1.14" },
     { name = "scipy", specifier = ">=1.18.1" },
 ]
+provides-extras = ["lsl"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1311,6 +1318,22 @@ wheels = [
 [package.optional-dependencies]
 crypto = [
     { name = "cryptography" },
+]
+
+[[package]]
+name = "pylsl"
+version = "1.18.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/bc/ec91573a16dbd72014a826ef89a26f2ade7cb11af30716d02400ebb01a20/pylsl-1.18.5.tar.gz", hash = "sha256:96450d7b14211460011d9eae278cb4b76d5ed355eb6bd058b1a826cbee6967f3", size = 48397, upload-time = "2026-09-21T02:11:08.197Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b5/57/d17d97018ae2ed46760d1e493f17439f16f76a0bd7908c4a8bf4d4a5398a/pylsl-1.18.5-py3-none-any.whl", hash = "sha256:4875d91988aa2cd0a7dad8fdb4d2069d4729d1fbf858620a16e58d4d08980b3f", size = 50200, upload-time = "2026-09-21T02:11:03.132Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/c7/bb487b0e33a7321a64396598151af3635ecc8a916085284bd07dc28d95b1/pylsl-1.18.5-py3-none-macosx_11_0_universal2.whl", hash = "sha256:db44c73924f176bbd280d4077d0daf86a350e18350a2404c87fa48c1023a7dd2", size = 737119, upload-time = "2026-09-21T02:11:04.143Z" },
+    { url = "https://files.pythonhosted.org/packages/36/9e/e3ccfaa808059874c3ce757fa96e2b970eb587e50ec57837ea8584f02061/pylsl-1.18.5-py3-none-manylinux_2_35_x86_64.whl", hash = "sha256:0cbb961e96258d81dcece4a4dc6e8feb43e04995cb9444337a8cf743616e1654", size = 1301047, upload-time = "2026-09-21T02:11:05.255Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/99/0dc707a8619ce4815c0839e92db8eb6d6fbc187091959cd9791e3d6be735/pylsl-1.18.5-py3-none-win32.whl", hash = "sha256:af6ec7c97f45fb4a5992370cee41bd68e5d953031f634082e0e217591e6f3660", size = 301251, upload-time = "2026-09-21T02:11:06.287Z" },
+    { url = "https://files.pythonhosted.org/packages/b9/8c/1ee0734f28746e7d8f707949913f1474b9ccb42f5e364a34239223544ba7/pylsl-1.18.5-py3-none-win_amd64.whl", hash = "sha256:2b408535718e7fd1842e5045a7ebbd5419409647f04e6dcc088d78ade629f751", size = 339740, upload-time = "2026-09-21T02:11:07.266Z" },
 ]
 
 [[package]]

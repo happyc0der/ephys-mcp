@@ -4,11 +4,17 @@ No vendor publishes an API for this today, so every method raises. The
 docstring records what a real adapter would have to supply so that one can be
 written against the same NeuralSource contract the moment an API exists.
 
-Requirements for a real adapter:
+How to write a real adapter: subclass `ephys_mcp.sources.live.RingBufferSource`
+(see `lsl.py` for a complete example), open the device connection in
+`__init__`, and call `self.push(samples)` from a reader thread. The base class
+then provides the buffer, read_raw, threshold spike times and status.
+
+What the device side must supply:
   * Authenticated, user-consented, local-only connection to the device relay.
-  * Channel map (about 1024 electrodes) and per-channel sampling rate
-    (about 20 kHz broadband, or on-implant spike events / spike-band power).
-  * A bounded ring buffer so read_raw / spike_times serve recent history.
+  * Channel count (about 1024 electrodes) and sampling rate (about 20 kHz
+    broadband). If the implant sends spike events or spike-band power instead
+    of broadband, override spike_times / read_raw accordingly.
+  * Amplitude scale, so results can be reported in microvolts.
   * Strictly read-only. Stimulation or device configuration must never be
     exposed through this interface.
 

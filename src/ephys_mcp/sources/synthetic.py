@@ -67,6 +67,8 @@ class SyntheticSource(NeuralSource):
         onsets = np.flatnonzero(fast[1:] & ~fast[:-1]) + 1
         after = int(0.2 * BEHAVIOR_FS)
         onsets = onsets[(onsets > BEHAVIOR_FS) & (onsets < len(speed) - BEHAVIOR_FS)]
+        if onsets.size == 0:
+            return {"move_onset_time": np.empty(0), "direction": np.empty(0, dtype=DIRECTIONS.dtype)}
         onsets = onsets[np.insert(np.diff(onsets) > 0.5 * BEHAVIOR_FS, 0, True)]
         mean_vel = np.array([self._vel[i : i + after].mean(axis=0) for i in onsets]).reshape(-1, 2)
         quadrant = np.round(np.arctan2(mean_vel[:, 1], mean_vel[:, 0]) / (np.pi / 2)).astype(int) % 4

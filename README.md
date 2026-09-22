@@ -11,7 +11,7 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 
 ## Status
 
-v0.1, early. Working today: local NWB files, local broadband WAV recordings, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, and figures. Planned: PyPI release and registry listings.
+v0.1, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, and figures. Planned: spike sorting, FALCON evaluation, latent-factor models.
 
 ## Install and run
 
@@ -51,8 +51,9 @@ Or offline: *"Open a synthetic session, check signal quality, fit a Kalman decod
 | `synthetic` | Simulated units tuned to cursor velocity, with broadband signal and ground truth |
 | `nwb` | A local `.nwb` file (`params.path`) |
 | `wav_dir` | Local broadband WAV (`params.path`): a folder of mono clips, one channel each, or one multi-channel file |
+| `lsl` | A live [Lab Streaming Layer](https://labstreaminglayer.org) broadband stream on the local network; keeps the most recent `buffer_s` of signal. Needs `uvx --with 'ephys-mcp[lsl]' ephys-mcp` |
 | `dandi` | An NWB file streamed from the [DANDI Archive](https://dandiarchive.org) by HTTP range requests; nothing is mirrored |
-| `n1_stub` | Not implemented. Documents the contract for a live implant adapter |
+| `n1_stub` | Not implemented. Documents how a live implant adapter would be written on the same base as `lsl` |
 
 Dataset licence and citation come from the archive and are returned by `open_session`, so the model can attribute the data. Many datasets record only during trials; the server tracks those spans (`recorded_fraction`) and leaves the gaps out of rates and decoding instead of reading them as silence.
 
@@ -67,6 +68,8 @@ Reference result on MC_Maze_Small (DANDI 000140, 142 units, last 20% held out, 5
 | `list_sources` | Source types and their parameters |
 | `search_datasets` | Search DANDI, or list curated intracortical datasets |
 | `list_dataset_files` | Licence, citation and NWB files of a DANDI dataset |
+| `list_lsl_streams` | LSL streams visible on the network |
+| `get_stream_status` | For a live session: buffered span, whether data is arriving, drops |
 | `open_session` / `close_session` | Session lifecycle |
 | `get_session_info` | Channels, rates, behaviour signals, licence, citation |
 | `get_signal_quality` | Noise, SNR, dead/noisy channels |
@@ -93,7 +96,9 @@ Plot tools return the PNG inline, so a vision-capable model can read the figure,
 
 ## Writing a source adapter
 
-Subclass `ephys_mcp.sources.base.NeuralSource` (`info`, `read_raw`, `spike_times`, `behavior`) and register it in `ephys_mcp/sources/__init__.py`. `sources/n1_stub.py` documents what a live implant adapter would need.
+For recordings, subclass `ephys_mcp.sources.base.NeuralSource` (`info`, `read_raw`, `spike_times`, `behavior`). For a live device, subclass `ephys_mcp.sources.live.RingBufferSource` and call `push(samples)` from a reader thread; `sources/lsl.py` is a complete example in about 60 lines, and `sources/n1_stub.py` lists what an implant adapter would additionally need. Register the class in `ephys_mcp/sources/__init__.py`.
+
+Live sessions report time as seconds since open, and only the most recent buffer is readable, so `t_start_s` and `duration_s` move forward.
 
 ## Development
 

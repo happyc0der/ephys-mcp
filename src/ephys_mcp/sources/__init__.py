@@ -1,5 +1,7 @@
 from .base import NeuralSource, SessionInfo
 from .dandi import DandiSource
+from .live import RingBufferSource
+from .lsl import LslSource
 from .n1_stub import N1StubSource
 from .nwb import NwbSource
 from .synthetic import SyntheticSource
@@ -32,10 +34,17 @@ SOURCES: dict[str, dict] = {
         "Leave path empty to pick the smallest file with behaviour.",
         "params": {"dandiset_id": "000140", "path": "", "version": ""},
     },
+    "lsl": {
+        "cls": LslSource,
+        "status": "available",
+        "description": "Subscribe to a live Lab Streaming Layer broadband stream (needs the lsl extra). "
+        "Give name or type; see list_lsl_streams. Keeps the most recent buffer_s of signal.",
+        "params": {"name": "", "type": "", "buffer_s": 60.0, "uv_per_count": 0.0},
+    },
     "n1_stub": {
         "cls": N1StubSource,
         "status": "not_implemented",
-        "description": "Contract for a live implant adapter. No public device API exists yet.",
+        "description": "Contract for a live implant adapter (subclass RingBufferSource). No public device API exists yet.",
         "params": {},
     },
 }
@@ -43,9 +52,11 @@ SOURCES: dict[str, dict] = {
 __all__ = [
     "SOURCES",
     "DandiSource",
+    "LslSource",
     "N1StubSource",
     "NeuralSource",
     "NwbSource",
+    "RingBufferSource",
     "SessionInfo",
     "SyntheticSource",
     "WavDirSource",
