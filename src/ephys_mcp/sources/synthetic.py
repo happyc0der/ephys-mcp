@@ -16,6 +16,7 @@ RAW_FS = 20_000.0
 BEHAVIOR_FS = 100.0
 NOISE_UV = 10.0
 SPIKE_AMP_UV = -80.0
+REFRACTORY_S = 0.002
 ONSET_SPEED = 15.0  # cm/s; an upward crossing marks a movement onset
 DIRECTIONS = np.array(["right", "up", "left", "down"])
 
@@ -57,7 +58,15 @@ class SyntheticSource(NeuralSource):
         self._spikes: list[np.ndarray] = []
         for u in range(n_units):
             idx = np.repeat(np.arange(n), counts[:, u])
-            self._spikes.append(np.sort((idx + rng.uniform(0, 1, idx.size)) / BEHAVIOR_FS))
+            times = np.sort((idx + rng.uniform(0, 1, idx.size)) / BEHAVIOR_FS)
+            keep = np.ones(times.size, dtype=bool)
+            last = -np.inf
+            for i, t in enumerate(times):  # absolute refractory period, as real neurons have
+                if t - last < REFRACTORY_S:
+                    keep[i] = False
+                else:
+                    last = t
+            self._spikes.append(times[keep])
         self._template = _spike_template(RAW_FS)
         self._trials = self._find_movements()
 

@@ -7,7 +7,7 @@ Rules for source adapters:
 1. Real datasets are fetched or opened **by the user at runtime**. They are never committed, mirrored or redistributed here.
 2. Every adapter must populate `SessionInfo.license` and `SessionInfo.citation` so the model can surface attribution to the user.
 3. Datasets with no stated licence may only be read from a path the user supplies. The server must not download them on the user's behalf. The `wav_dir` source works this way: it opens local files only and reports their licence as unknown.
-4. Dependencies must be permissively licensed (MIT, BSD, Apache-2.0). No GPL dependencies.
+4. Dependencies must be permissively licensed (MIT, BSD, Apache-2.0). No GPL dependencies. This is why only spikeinterface's built-in sorters are offered: external sorters such as Kilosort carry other licences and are not wired in.
 5. Code contributed here is released under CC0-1.0, so do not paste in code copied from other projects, even permissively licensed ones: their attribution terms cannot be waived by us.
 
 The DANDI source reads each dataset's licence and citation from the archive API at open time, so what the model reports is always the archive's current statement. Curated datasets:

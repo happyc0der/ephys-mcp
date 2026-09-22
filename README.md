@@ -11,7 +11,7 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 
 ## Status
 
-v0.1, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, and figures. Planned: spike sorting, FALCON evaluation, latent-factor models.
+v0.1, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, and figures. Planned: FALCON evaluation, latent-factor models, probe geometry.
 
 ## Install and run
 
@@ -74,6 +74,7 @@ Reference result on MC_Maze_Small (DANDI 000140, 142 units, last 20% held out, 5
 | `get_session_info` | Channels, rates, behaviour signals, licence, citation |
 | `get_signal_quality` | Noise, SNR, dead/noisy channels |
 | `detect_spikes` | Threshold crossings; precision/recall when truth exists |
+| `sort_spikes` | Spike-sort a broadband window with spikeinterface (`sort` extra); the session then uses the sorted units |
 | `get_firing_rates` | Population rate summary |
 | `fit_decoder` | Ridge or Kalman, scored on held-out data; hyperparameters chosen inside the training split |
 | `decode_window` | Decoded-vs-true preview for a window |
@@ -85,6 +86,15 @@ Reference result on MC_Maze_Small (DANDI 000140, 142 units, last 20% held out, 5
 Resource: `ephys://sessions`. Prompt: `analyze_session`.
 
 Tools return summaries, never raw arrays, so results fit in a model's context.
+
+### Optional extras
+
+| Extra | Adds | Install |
+| --- | --- | --- |
+| `lsl` | the `lsl` live source | `uvx --with 'ephys-mcp[lsl]' ephys-mcp` |
+| `sort` | `sort_spikes` via spikeinterface's built-in sorters (spykingcircus2, tridesclous2); about 330 MB of dependencies | `uvx --with 'ephys-mcp[sort]' ephys-mcp` |
+
+Sorting treats channels as independent electrodes because sources carry no probe geometry yet, so it suits single-electrode arrays rather than dense probes. On the simulator, spykingcircus2 recovers every unit with recall above 0.95.
 
 Plot tools return the PNG inline, so a vision-capable model can read the figure, and also save it under `~/.cache/ephys-mcp/plots` (override with `EPHYS_MCP_OUTPUT_DIR`). Figures use a categorical palette checked for colour-blind separation, with direct labels so identity never rests on colour alone.
 

@@ -38,6 +38,9 @@ ephys-mcp = "ephys_mcp.cli:main"
 lsl = [
     "pylsl>=1.18.5",
 ]
+sort = [
+    "spikeinterface[sorters-internal]>=0.105.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]

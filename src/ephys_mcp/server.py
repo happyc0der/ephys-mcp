@@ -21,6 +21,7 @@ from .processing.decode import DECODERS, r2_score
 from .processing.psth import aligned_counts, compute_psth, modulation, summarize, usable_events
 from .processing.quality import signal_quality
 from .processing.rates import bin_spikes, firing_stats, resample_to
+from .processing.sorting import SortedSource, sort_window
 from .processing.spikes import detect_spikes as _detect_spikes
 from .processing.spikes import match_spikes
 from .sources import SOURCES, NeuralSource
@@ -188,6 +189,39 @@ def detect_spikes(session_id: str, t0: float = 0.0, duration_s: float = 2.0, thr
             "median_recall": round(float(np.median([s["recall"] for s in scores])), 3),
         }
     return out
+
+
+@tool
+def sort_spikes(
+    session_id: str,
+    t0: float = 0.0,
+    duration_s: float = 60.0,
+    sorter: Literal["spykingcircus2", "tridesclous2"] = "spykingcircus2",
+    channels: list[int] | None = None,
+) -> dict:
+    """Spike-sort a broadband window (needs the sort extra). Afterwards the session's spike times
+    are the sorted units, restricted to that window, so rates, PSTHs, rasters and decoders use them.
+
+    Channels are treated as independent electrodes (no probe geometry), so units are found per
+    channel. Sorting takes seconds to a few minutes depending on duration and channel count.
+    """
+    src = _session(session_id)
+    if isinstance(src, SortedSource):
+        src = src.inner
+    t0, t1 = _range(src, t0, t0 + max(1.0, duration_s))
+    trains, units = sort_window(src, t0, t1, sorter, channels)
+    _sessions[session_id] = SortedSource(src, trains, t0, t1, sorter)
+    _decoders.pop(session_id, None)
+    good = [u for u in units if u["isi_violation_fraction"] < 0.02]
+    return {
+        "sorter": sorter,
+        "window_s": [t0, t1],
+        "n_units": len(units),
+        "n_units_clean_isi": len(good),
+        "amplitude_unit": src.info().amplitude_unit,
+        "units": units[:50],
+        "note": "session spike times now come from these units; call sort_spikes again to re-sort a different window",
+    }
 
 
 @tool
