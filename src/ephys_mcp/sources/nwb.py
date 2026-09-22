@@ -88,8 +88,6 @@ class NwbSource(NeuralSource):
             else 0.0
         )
 
-        self._positions, self._areas = self._electrode_geometry(nwb)
-
         self._trials: dict[str, np.ndarray] = {}
         if nwb.trials is not None:
             for name in nwb.trials.colnames:
@@ -103,6 +101,7 @@ class NwbSource(NeuralSource):
         self._behavior = _behavior_series(nwb)
         self._timestamps: dict[str, np.ndarray] = {}
         self._raw = next((a for a in nwb.acquisition.values() if isinstance(a, ElectricalSeries)), None)
+        self._positions, self._areas = self._electrode_geometry(nwb)
 
         starts, stops = [], []
         if any(s.size for s in self._spikes):

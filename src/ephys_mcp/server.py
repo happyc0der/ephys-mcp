@@ -133,7 +133,14 @@ def open_session(source: str = "synthetic", params: dict[str, Any] | None = None
     """
     if source not in SOURCES:
         raise ValueError(f"unknown source {source!r}; options: {sorted(SOURCES)}")
-    src = SOURCES[source]["cls"](**{**SOURCES[source]["params"], **(params or {})})
+    defaults = SOURCES[source]["params"]
+    unknown = sorted(set(params or {}) - set(defaults))
+    if unknown:
+        raise ValueError(f"unknown params {unknown} for source {source!r}; valid: {sorted(defaults)}")
+    try:
+        src = SOURCES[source]["cls"](**{**defaults, **(params or {})})
+    except TypeError as exc:
+        raise ValueError(f"bad params for source {source!r}: {exc}") from exc
     sid = uuid.uuid4().hex[:8]
     _sessions[sid] = src
     return {"session_id": sid, **src.info().to_dict()}
@@ -178,7 +185,8 @@ def detect_spikes(session_id: str, t0: float = 0.0, duration_s: float = 2.0, thr
     if info.raw_fs_hz is None:
         raise ValueError("this session has no broadband signal")
     t1 = t0 + min(duration_s, 10.0)
-    spikes, sigma = _detect_spikes(src.read_raw(t0, t1), info.raw_fs_hz, threshold_sigma)
+    raw = src.read_raw(t0, t1)
+    spikes, sigma = _detect_spikes(raw, info.raw_fs_hz, threshold_sigma)
     counts = np.array([s.size for s in spikes])
     out = {
         "window_s": [t0, t1],
@@ -188,8 +196,8 @@ def detect_spikes(session_id: str, t0: float = 0.0, duration_s: float = 2.0, thr
         "median_noise": round(float(np.median(sigma)), 2),
         "amplitude_unit": info.amplitude_unit,
     }
-    if info.has_sorted_spikes:
-        truth = src.spike_times(t0, t1)
+    if info.has_sorted_spikes and not isinstance(src, SortedSource) and info.n_channels == raw.shape[1]:
+        truth = src.spike_times(t0, t1)  # a source whose units are known, one per channel
         scores = [match_spikes(d + t0, tr) for d, tr in zip(spikes, truth)]
         out["vs_ground_truth"] = {
             "median_precision": round(float(np.median([s["precision"] for s in scores])), 3),
@@ -199,7 +207,7 @@ def detect_spikes(session_id: str, t0: float = 0.0, duration_s: float = 2.0, thr
 
 
 def _positions(session_id: str, src: NeuralSource) -> np.ndarray | None:
-    """Contact positions: what the user set for this session, else what the file provides."""
+    """Contact positions for the raw channels: what the user set for this session, else the file's."""
     if session_id in _probes:
         return _probes[session_id]
     inner = src.inner if isinstance(src, SortedSource) else src
@@ -279,9 +287,7 @@ def plot_probe(session_id: str, t0: float = 0.0, duration_s: float = 30.0) -> li
     inner = src.inner if isinstance(src, SortedSource) else src
     t0, t1 = _range(inner, t0, t0 + min(max(duration_s, 1.0), 300.0))
     rates = np.array([s.size for s in inner.spike_times(t0, t1)]) / (t1 - t0)
-    units = None
-    if isinstance(src, SortedSource):
-        units = [(u["channel"], u["rate_hz"]) for u in src.units] if hasattr(src, "units") else None
+    units = [(u["channel"], u["rate_hz"]) for u in src.units] if isinstance(src, SortedSource) else None
     areas = inner.channel_areas()
     path = plots.plot_probe(f"{session_id}-probe", f"Array map · rate over {t0:g}–{t1:g} s", pos, rates, areas, units)
     return _figure(path, window_s=[t0, t1], **geometry.summarize(pos))
@@ -306,12 +312,14 @@ def sort_spikes(
     if isinstance(src, SortedSource):
         src = src.inner
     t0, t1 = _range(src, t0, t0 + max(1.0, duration_s))
+    n_ch = src.info().n_channels
+    if channels is not None and (not channels or any(not 0 <= c < n_ch for c in channels)):
+        raise ValueError(f"channels must be a non-empty list of indices in 0..{n_ch - 1}")
     positions = _positions(session_id, src)
     trains, units = sort_window(src, t0, t1, sorter, channels, positions)
-    sorted_src = SortedSource(src, trains, t0, t1, sorter)
-    sorted_src.units = units
-    _sessions[session_id] = sorted_src
-    _decoders.pop(session_id, None)
+    _sessions[session_id] = SortedSource(src, trains, units, t0, t1, sorter)
+    _decoders.pop(session_id, None)  # fitted on the old units
+    _latents.pop(session_id, None)
     good = [u for u in units if u["isi_violation_fraction"] < 0.02]
     return {
         "sorter": sorter,
@@ -392,7 +400,14 @@ def fit_decoder(
     _, Xte, yte = _xy(src, target, split, dur, bin_s, mask)
     model = DECODERS[kind](bin_s=bin_s).fit(Xtr, ytr)
     r2 = r2_score(yte, model.predict(Xte))
-    _decoders[session_id] = {"model": model, "target": target, "bin_s": bin_s, "kind": kind, "test_start_s": split}
+    _decoders[session_id] = {
+        "model": model,
+        "target": target,
+        "bin_s": bin_s,
+        "kind": kind,
+        "mask": mask,
+        "test_start_s": split,
+    }
     return {
         "kind": kind,
         "params": model.params,
@@ -491,13 +506,14 @@ def decode_window(session_id: str, t0: float, duration_s: float = 2.0, max_point
     d = _decoders[session_id]
     t0, t1 = _range(src, t0, t0 + duration_s)
     lead = min(WARMUP_S, t0 - src.info().t_start_s)
-    t, X, y = _xy(src, d["target"], t0 - lead, t1, d["bin_s"])
+    t, X, y = _xy(src, d["target"], t0 - lead, t1, d["bin_s"], d["mask"])
     keep = t >= t0
     t, y, yhat = t[keep], y[keep], d["model"].predict(X)[keep]
     step = max(1, len(t) // max(1, min(max_points, 100)))
     return {
         "kind": d["kind"],
         "target": d["target"],
+        "mask": d["mask"],
         "window_r2_mean": round(float(r2_score(y, yhat).mean()), 3),
         "preview": [
             {"t": round(float(t[i]), 3), "decoded": np.round(yhat[i], 2).tolist(), "true": np.round(y[i], 2).tolist()}
@@ -593,7 +609,7 @@ def _behaviour_r2_from_latents(src: NeuralSource, groups: dict, t: np.ndarray, t
     y = np.stack([resample_to(bt, bv, e + t) for e in events]).reshape(-1, bv.shape[1])
     ok = np.isfinite(y).all(axis=1)
     out = {"signal": name}
-    for k in sorted({1, 2, 3, traj.shape[2]}):
+    for k in sorted({k for k in (1, 2, 3, traj.shape[2]) if k <= traj.shape[2]}):
         X = np.c_[traj[:, :, :k].reshape(-1, k), np.ones(len(y))][ok]
         W = np.linalg.lstsq(X, y[ok], rcond=None)[0]
         out[f"r2_top{k}"] = round(float(r2_score(y[ok], X @ W).mean()), 3)
@@ -727,7 +743,7 @@ def plot_decoding(session_id: str, t0: float, duration_s: float = 10.0) -> list:
     d = _decoders[session_id]
     t0, t1 = _range(src, t0, t0 + min(max(duration_s, 0.5), 60.0))
     lead = min(WARMUP_S, t0 - src.info().t_start_s)
-    t, X, y = _xy(src, d["target"], t0 - lead, t1, d["bin_s"])
+    t, X, y = _xy(src, d["target"], t0 - lead, t1, d["bin_s"], d["mask"])
     keep = t >= t0
     t, y, yhat = t[keep], y[keep], d["model"].predict(X)[keep]
     r2 = r2_score(y, yhat)
@@ -754,9 +770,10 @@ def list_lsl_streams(wait_s: float = 3.0) -> dict:
 def get_stream_status(session_id: str) -> dict:
     """For a live session: how much signal is buffered, whether data is still arriving, and drops."""
     src = _session(session_id)
-    if not isinstance(src, RingBufferSource):
+    live = src.inner if isinstance(src, SortedSource) else src
+    if not isinstance(live, RingBufferSource):
         raise ValueError("not a live session; this tool applies to lsl sessions")  # noqa: TRY004 - a bad argument, not a type bug
-    return src.status()
+    return live.status()
 
 
 @tool

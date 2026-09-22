@@ -109,19 +109,35 @@ def sort_window(
 class SortedSource(NeuralSource):
     """A session whose spike times come from a sorter over one window, everything else delegated."""
 
-    def __init__(self, inner: NeuralSource, trains: list[np.ndarray], t0: float, t1: float, sorter: str):
-        self.inner, self.trains, self.t0, self.t1, self.sorter = inner, trains, t0, t1, sorter
+    def __init__(
+        self, inner: NeuralSource, trains: list[np.ndarray], units: list[dict], t0: float, t1: float, sorter: str
+    ):
+        self.inner, self.trains, self.units = inner, trains, units
+        self.t0, self.t1, self.sorter = t0, t1, sorter
         self.kind = inner.kind
 
     def info(self) -> SessionInfo:
         info = self.inner.info()
         info.has_sorted_spikes = True
         info.n_channels = len(self.trains)
+        info.t_start_s, info.duration_s = round(self.t0, 3), round(self.t1 - self.t0, 3)  # the sorted window
         info.notes = (
             f"Spike times are {len(self.trains)} units sorted by {self.sorter} over {self.t0:g}-{self.t1:g} s; "
-            f"analyses are limited to that window. Original: {info.notes}"
+            f"the session now spans that window only. Original: {info.notes}"
         )
         return info
+
+    def channel_positions(self):
+        pos = self.inner.channel_positions()
+        if pos is None or not self.units:
+            return None
+        return np.array([pos[u["channel"]] for u in self.units], dtype=float)
+
+    def channel_areas(self):
+        areas = self.inner.channel_areas()
+        if areas is None or not self.units:
+            return None
+        return [areas[u["channel"]] for u in self.units]
 
     def valid_intervals(self) -> np.ndarray:
         iv = np.clip(self.inner.valid_intervals(), self.t0, self.t1)

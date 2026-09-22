@@ -143,9 +143,16 @@ class SyntheticSource(NeuralSource):
         if t1 - t0 > 10.0:
             raise ValueError("raw reads are limited to 10 s per call")
         channels = list(range(self.n_units)) if channels is None else channels
+        i0 = round(t0 * RAW_FS)
         n = round((t1 - t0) * RAW_FS)
-        rng = np.random.default_rng((self.seed, int(t0 * 1000)))
-        out = (NOISE_UV * self.noise * rng.standard_normal((n, len(channels)))).astype(np.float32)
+        out = np.empty((n, len(channels)), dtype=np.float32)
+        block = int(RAW_FS)  # noise is generated per one-second block of absolute time, so overlapping
+        for b in range(i0 // block, (i0 + n - 1) // block + 1):  # reads return identical samples
+            rng = np.random.default_rng((self.seed, b))
+            noise = rng.standard_normal((block, self.n_units)).astype(np.float32)[:, channels]
+            lo, hi = max(i0, b * block), min(i0 + n, (b + 1) * block)
+            out[lo - i0 : hi - i0] = noise[lo - b * block : hi - b * block]
+        out *= NOISE_UV * self.noise
         waves: dict[int, np.ndarray] = {}
 
         def wave(unit: int) -> np.ndarray:

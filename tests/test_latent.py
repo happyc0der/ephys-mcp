@@ -65,6 +65,11 @@ def test_latent_tool_explains_cursor_velocity(sid, tmp_path, monkeypatch):
     assert pca["behaviour_explained"]["r2_top2"] < res["behaviour_explained"]["r2_top2"]  # GPFA denoises
 
 
+def test_latent_tool_with_fewer_than_three_factors(sid):
+    res = server.fit_latent_factors(sid, n_factors=2, method="pca")
+    assert set(res["behaviour_explained"]) == {"signal", "r2_top1", "r2_top2"}
+
+
 def test_latent_tool_errors(sid):
     with pytest.raises(ToolError, match="below the number of units"):
         server.fit_latent_factors(sid, n_factors=20, units=[0, 1, 2])

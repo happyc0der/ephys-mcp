@@ -11,7 +11,7 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 
 ## Status
 
-v0.5, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, latent-factor models (GPFA, PCA), probe geometry, and figures.
+v0.5. The planned feature set is complete: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, latent-factor models (GPFA, PCA), probe geometry, and figures. 24 tools. Bug reports and feature requests go to [GitHub Issues](https://github.com/happyc0der/ephys-mcp/issues).
 
 ## Install and run
 
@@ -132,6 +132,10 @@ uv run pytest              # offline
 uv run pytest -m network   # also streams a real file from DANDI
 uv run ruff check .
 ```
+
+## Citing
+
+See [CITATION.cff](CITATION.cff); GitHub's "Cite this repository" button uses it. Cite the datasets you analyse separately: `get_session_info` returns each one's citation.
 
 ## Licence
 

@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use ephys-mcp in research, please cite it as below."
+title: "ephys-mcp: an MCP server for intracortical brain-computer-interface recordings"
+type: software
+authors:
+  - name: "ephys-mcp contributors"
+repository-code: "https://github.com/happyc0der/ephys-mcp"
+url: "https://github.com/happyc0der/ephys-mcp"
+license: CC0-1.0
+version: 0.5.0
+date-released: 2026-09-22
+keywords:
+  - brain-computer interface
+  - electrophysiology
+  - Model Context Protocol
+  - NWB
+  - DANDI
