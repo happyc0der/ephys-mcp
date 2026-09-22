@@ -17,6 +17,7 @@ from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from . import plots
+from .processing import geometry
 from .processing.decode import DECODERS, r2_score
 from .processing.latent import MAX_FACTORS, fit_gpfa, fit_pca
 from .processing.latent import summarize as summarize_latent
@@ -72,6 +73,7 @@ def tool(fn=None, **options):
 _sessions: dict[str, NeuralSource] = {}
 _decoders: dict[str, dict[str, Any]] = {}
 _latents: dict[str, dict[str, Any]] = {}
+_probes: dict[str, np.ndarray] = {}  # user-supplied contact positions, by session
 
 
 def _session(session_id: str) -> NeuralSource:
@@ -144,6 +146,7 @@ def close_session(session_id: str) -> dict:
     del _sessions[session_id]
     _decoders.pop(session_id, None)
     _latents.pop(session_id, None)
+    _probes.pop(session_id, None)
     return {"closed": session_id}
 
 
@@ -195,6 +198,95 @@ def detect_spikes(session_id: str, t0: float = 0.0, duration_s: float = 2.0, thr
     return out
 
 
+def _positions(session_id: str, src: NeuralSource) -> np.ndarray | None:
+    """Contact positions: what the user set for this session, else what the file provides."""
+    if session_id in _probes:
+        return _probes[session_id]
+    inner = src.inner if isinstance(src, SortedSource) else src
+    return inner.channel_positions()
+
+
+@tool
+def set_probe_geometry(
+    session_id: str,
+    layout: Literal["linear", "grid", "utah", "tetrode_linear", "explicit"] = "utah",
+    pitch_um: float = 400.0,
+    n_columns: int = 0,
+    positions_um: list[list[float]] | None = None,
+) -> dict:
+    """Tell the server where the recording's contacts are, for sessions whose file does not say.
+
+    Named layouts: 'utah' (square grid, e.g. 96 contacts at 400 um), 'grid' with n_columns,
+    'linear' (one column at pitch_um, e.g. a laminar probe), 'tetrode_linear' (groups of four).
+    'explicit' takes positions_um as [[x, y], ...] in channel order. Geometry is used by
+    sort_spikes and plot_probe. Contacts under 100 um apart are sorted jointly.
+    """
+    src = _session(session_id)
+    inner = src.inner if isinstance(src, SortedSource) else src
+    n = inner.info().n_channels
+    if layout == "explicit":
+        if not positions_um:
+            raise ValueError("positions_um is required for layout='explicit'")
+        pos = np.asarray(positions_um, dtype=float)
+        if pos.shape != (n, 2) or not np.isfinite(pos).all():
+            raise ValueError(f"positions_um must be {n} finite [x, y] pairs, one per channel")
+    else:
+        pos = geometry.make_layout(layout, n, pitch_um, n_columns)
+    _probes[session_id] = pos
+    return {"session_id": session_id, "layout": layout, **geometry.summarize(pos)}
+
+
+@tool
+def get_probe(session_id: str, max_rows: int = 256) -> dict:
+    """Contact geometry and brain-area labels per channel, where known. Use the `channel`
+    indices with the `units` argument of get_psth / fit_latent_factors to analyse one area."""
+    src = _session(session_id)
+    inner = src.inner if isinstance(src, SortedSource) else src
+    pos, areas = _positions(session_id, src), inner.channel_areas()
+    n = inner.info().n_channels
+    out: dict[str, Any] = {
+        "n_channels": n,
+        "geometry_source": "user" if session_id in _probes else ("file" if pos is not None else None),
+        "areas": {str(k): int(v) for k, v in zip(*np.unique(areas, return_counts=True))} if areas else {},
+    }
+    if pos is not None:
+        out["geometry"] = geometry.summarize(pos)
+    rows = []
+    for c in range(min(n, max(1, min(max_rows, 1024)))):
+        row: dict[str, Any] = {"channel": c}
+        if areas:
+            row["area"] = areas[c]
+        if pos is not None:
+            row["x_um"], row["y_um"] = round(float(pos[c, 0]), 1), round(float(pos[c, 1]), 1)
+        rows.append(row)
+    out["channels"] = rows
+    if n > len(rows):
+        out["truncated_to"] = len(rows)
+    if pos is None and not areas:
+        out["hint"] = "no geometry or area labels in this session; set_probe_geometry can supply a layout"
+    return out
+
+
+@tool(structured_output=False)
+def plot_probe(session_id: str, t0: float = 0.0, duration_s: float = 30.0) -> list:
+    """Figure: the array map, each contact coloured by its firing rate over a window, with area
+    labels and sorted units marked when a sort has been run. Needs geometry from the file or
+    set_probe_geometry."""
+    src = _session(session_id)
+    pos = _positions(session_id, src)
+    if pos is None:
+        raise ValueError("no probe geometry; call set_probe_geometry first")
+    inner = src.inner if isinstance(src, SortedSource) else src
+    t0, t1 = _range(inner, t0, t0 + min(max(duration_s, 1.0), 300.0))
+    rates = np.array([s.size for s in inner.spike_times(t0, t1)]) / (t1 - t0)
+    units = None
+    if isinstance(src, SortedSource):
+        units = [(u["channel"], u["rate_hz"]) for u in src.units] if hasattr(src, "units") else None
+    areas = inner.channel_areas()
+    path = plots.plot_probe(f"{session_id}-probe", f"Array map · rate over {t0:g}–{t1:g} s", pos, rates, areas, units)
+    return _figure(path, window_s=[t0, t1], **geometry.summarize(pos))
+
+
 @tool
 def sort_spikes(
     session_id: str,
@@ -206,20 +298,25 @@ def sort_spikes(
     """Spike-sort a broadband window (needs the sort extra). Afterwards the session's spike times
     are the sorted units, restricted to that window, so rates, PSTHs, rasters and decoders use them.
 
-    Channels are treated as independent electrodes (no probe geometry), so units are found per
-    channel. Sorting takes seconds to a few minutes depending on duration and channel count.
+    Uses the session's probe geometry (from the file or set_probe_geometry) so nearby contacts
+    are sorted jointly; without geometry each channel is treated as an independent electrode.
+    Sorting takes seconds to a few minutes depending on duration and channel count.
     """
     src = _session(session_id)
     if isinstance(src, SortedSource):
         src = src.inner
     t0, t1 = _range(src, t0, t0 + max(1.0, duration_s))
-    trains, units = sort_window(src, t0, t1, sorter, channels)
-    _sessions[session_id] = SortedSource(src, trains, t0, t1, sorter)
+    positions = _positions(session_id, src)
+    trains, units = sort_window(src, t0, t1, sorter, channels, positions)
+    sorted_src = SortedSource(src, trains, t0, t1, sorter)
+    sorted_src.units = units
+    _sessions[session_id] = sorted_src
     _decoders.pop(session_id, None)
     good = [u for u in units if u["isi_violation_fraction"] < 0.02]
     return {
         "sorter": sorter,
         "window_s": [t0, t1],
+        "geometry": "used" if positions is not None else "none; channels treated as independent electrodes",
         "n_units": len(units),
         "n_units_clean_isi": len(good),
         "amplitude_unit": src.info().amplitude_unit,

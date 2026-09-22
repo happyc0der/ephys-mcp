@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
+SEQUENTIAL = LinearSegmentedColormap.from_list("blue_seq", ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"])
 CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
 DIVERGING = LinearSegmentedColormap.from_list("blue_gray_red", ["#184f95", "#86b6ef", "#f0efec", "#ec835a", "#a82a2a"])
 SURFACE, INK, INK_2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
@@ -256,4 +257,71 @@ def plot_latents(
             fontsize=7,
             color=INK_2,
         )
+    return _save(fig, stem)
+
+
+def plot_probe(
+    stem: str, title: str, pos: np.ndarray, rates: np.ndarray, areas: list[str] | None, units: list | None
+) -> Path:
+    diff = pos[:, None, :] - pos[None, :, :]
+    dist = np.sqrt((diff**2).sum(axis=2))
+    np.fill_diagonal(dist, np.inf)
+    pitch = float(np.median(dist.min(axis=1))) if len(pos) > 1 else 100.0
+    lo, hi = pos.min(axis=0), pos.max(axis=0)
+    pad = np.maximum(1.5 * pitch, 0.08 * (hi - lo))
+    lo, hi = lo - pad, hi + pad
+    extent = hi - lo
+    # Figure shape follows the array's shape, within sane bounds, so a laminar probe is a tall strip.
+    aspect = float(np.clip(extent[1] / extent[0], 0.4, 3.0))
+    w = 6.0 if aspect <= 1 else 6.0 / aspect * 1.2
+    h = w * aspect
+    fig, ax = plt.subplots(figsize=(w + 1.8, h + 1.2))
+    ax.set_xlim(lo[0], hi[0])
+    ax.set_ylim(lo[1], hi[1])
+    ax.set_aspect("equal", adjustable="box")  # keep the limits; shrink the axes box instead
+    fig.canvas.draw()  # settle the axes box so marker size can follow the data scale
+    box = ax.get_window_extent()
+    pts_per_um = min(
+        box.width / (ax.get_xlim()[1] - ax.get_xlim()[0]), box.height / (ax.get_ylim()[1] - ax.get_ylim()[0])
+    )
+    pts_per_um *= 72.0 / fig.dpi
+    diameter_pt = float(np.clip(0.65 * pitch * pts_per_um, 4.0, 22.0))
+    size = diameter_pt**2
+    sc = ax.scatter(pos[:, 0], pos[:, 1], c=rates, cmap=SEQUENTIAL, s=size, edgecolors=AXIS, linewidths=0.4, zorder=2)
+    if areas:
+        for i, name in enumerate(sorted(set(areas))):
+            members = [k for k, a in enumerate(areas) if a == name]
+            cx = pos[members, 0].mean()
+            ax.annotate(
+                name,
+                (cx, pos[members, 1].max() + 0.6 * pitch),
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                color=CATEGORICAL[i % len(CATEGORICAL)],
+                fontweight="bold",
+            )
+    if units:
+        ch = np.array([u[0] for u in units])
+        counts = np.bincount(ch, minlength=len(pos))
+        for c in np.flatnonzero(counts):
+            ax.annotate(
+                str(counts[c]),
+                pos[c],
+                xytext=(0, 0),
+                textcoords="offset points",
+                ha="center",
+                va="center",
+                fontsize=min(7.0, 0.6 * diameter_pt),
+                color=SURFACE if rates[c] > np.median(rates) else INK,
+                zorder=3,
+            )
+        fig.text(0.99, 0.01, "numbers = sorted units per contact", ha="right", va="bottom", fontsize=8, color=MUTED)
+    ax.set_xlabel("x (µm)")
+    ax.set_ylabel("y (µm)")
+    ax.set_title(title)
+    ax.grid(True)
+    bar = fig.colorbar(sc, ax=ax, fraction=0.04, pad=0.04)
+    bar.outline.set_visible(False)
+    bar.set_label("Firing rate (Hz)", color=INK_2, fontsize=8)
     return _save(fig, stem)

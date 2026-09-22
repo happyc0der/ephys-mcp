@@ -88,6 +88,8 @@ class NwbSource(NeuralSource):
             else 0.0
         )
 
+        self._positions, self._areas = self._electrode_geometry(nwb)
+
         self._trials: dict[str, np.ndarray] = {}
         if nwb.trials is not None:
             for name in nwb.trials.colnames:
@@ -118,6 +120,49 @@ class NwbSource(NeuralSource):
         self._t0, self._t1 = float(min(starts)), float(max(stops))
         if self._t0 < 1.0:  # sessions that begin near zero are easier to reason about from zero
             self._t0 = 0.0
+
+    def _electrode_geometry(self, nwb) -> tuple[np.ndarray | None, list[str] | None]:
+        """Per-channel (or per-unit, when sorted) positions in um and area labels from the electrodes table."""
+        table = nwb.electrodes
+        if table is None or len(table) == 0:
+            return None, None
+        cols = table.colnames
+        pos = None
+        for xcol, ycol in (("rel_x", "rel_y"), ("x", "y")):
+            if xcol in cols and ycol in cols:
+                xy = np.stack([np.asarray(table[xcol][:], float), np.asarray(table[ycol][:], float)], axis=1)
+                if np.isfinite(xy).all():
+                    if np.abs(xy).max() < 0.05:  # NWB's x/y/z are nominally metres
+                        xy = xy * 1e6
+                    pos = xy
+                    break
+        areas = [str(a) for a in table["location"][:]] if "location" in cols else None
+        if self._spikes and nwb.units is not None and "electrodes" in nwb.units.colnames:
+            # one row per unit: take its first electrode
+            rows = []
+            for i in range(len(nwb.units)):
+                idx = list(nwb.units["electrodes"][i].index)
+                rows.append(idx[0] if idx else -1)
+            rows = np.asarray(rows)
+            ok = rows >= 0
+            if pos is not None:
+                pos = np.where(ok[:, None], pos[np.clip(rows, 0, len(pos) - 1)], np.nan)
+                pos = None if not np.isfinite(pos).all() else pos
+            if areas is not None:
+                areas = [areas[r] if r >= 0 else "unknown" for r in rows]
+        elif self._raw is not None and (pos is not None or areas is not None):
+            n = self._raw.data.shape[1]
+            if pos is not None and len(pos) != n:
+                pos = None
+            if areas is not None and len(areas) != n:
+                areas = None
+        return pos, areas
+
+    def channel_positions(self) -> np.ndarray | None:
+        return self._positions
+
+    def channel_areas(self) -> list[str] | None:
+        return self._areas
 
     def _stored_rate(self, series) -> float:
         """The series' sampling rate in Hz, correcting files that stored the period instead.
@@ -178,6 +223,10 @@ class NwbSource(NeuralSource):
             t_start_s=round(self._t0, 3),
             behavior_units={k: str(v.unit) for k, v in self._behavior.items()},
             recorded_fraction=round(float((valid[:, 1] - valid[:, 0]).sum() / (self._t1 - self._t0)), 3),
+            has_probe_geometry=self._positions is not None,
+            channel_areas={str(k): int(v) for k, v in zip(*np.unique(self._areas, return_counts=True))}
+            if self._areas
+            else {},
             **describe_trials(self._trials),
         )
 

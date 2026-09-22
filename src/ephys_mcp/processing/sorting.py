@@ -1,8 +1,8 @@
 """Spike sorting of a broadband window with spikeinterface's built-in sorters.
 
-Needs the `sort` extra. Channels are treated as independent electrodes
-because sources carry no probe geometry yet; units are therefore found per
-channel, which suits single-electrode arrays but not dense probes.
+Needs the `sort` extra. With probe geometry the sorter groups nearby contacts
+and finds units across them; without it, channels are placed far apart and
+treated as independent electrodes.
 """
 
 from __future__ import annotations
@@ -33,7 +33,13 @@ def _spikeinterface():
 
 
 def sort_window(
-    src: NeuralSource, t0: float, t1: float, sorter: str, channels: list[int] | None, chunk_s: float = 10.0
+    src: NeuralSource,
+    t0: float,
+    t1: float,
+    sorter: str,
+    channels: list[int] | None,
+    positions: np.ndarray | None = None,
+    chunk_s: float = 10.0,
 ) -> tuple[list[np.ndarray], list[dict]]:
     """Sort [t0, t1) and return (spike trains per unit, per-unit summaries)."""
     si, ss, Probe = _spikeinterface()
@@ -55,9 +61,11 @@ def sort_window(
 
     rec = si.NumpyRecording(raw, sampling_frequency=fs)
     probe = Probe(ndim=2)
-    probe.set_contacts(
-        positions=np.c_[np.zeros(n_ch), CHANNEL_PITCH_UM * np.arange(n_ch)], shapes="circle", shape_params={"radius": 5}
-    )
+    if positions is None:
+        positions = np.c_[np.zeros(n_ch), CHANNEL_PITCH_UM * np.arange(n_ch)]
+    elif channels:
+        positions = positions[channels]
+    probe.set_contacts(positions=positions, shapes="circle", shape_params={"radius": 5})
     probe.set_device_channel_indices(np.arange(n_ch))
     rec = rec.set_probe(probe) or rec
 
@@ -88,6 +96,7 @@ def sort_window(
                 {
                     "unit": len(units),
                     "channel": channels[best] if channels else best,
+                    "position_um": [round(float(v), 1) for v in positions[best]] if positions is not None else None,
                     "n_spikes": int(idx.size),
                     "rate_hz": round(float(idx.size / (t1 - t0)), 2),
                     "peak_amplitude": round(float(np.median(peaks[:, best])), 1),

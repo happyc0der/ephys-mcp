@@ -17,6 +17,7 @@ BEHAVIOR_FS = 100.0
 NOISE_UV = 10.0
 SPIKE_AMP_UV = -80.0
 REFRACTORY_S = 0.002
+SPREAD_UM = 40.0  # spatial decay of a unit's waveform across contacts on a dense probe
 ONSET_SPEED = 15.0  # cm/s; an upward crossing marks a movement onset
 DIRECTIONS = np.array(["right", "up", "left", "down"])
 
@@ -30,7 +31,14 @@ def _spike_template(fs: float) -> np.ndarray:
 class SyntheticSource(NeuralSource):
     kind = "synthetic"
 
-    def __init__(self, n_units: int = 32, duration_s: float = 120.0, noise: float = 1.0, seed: int = 0):
+    def __init__(
+        self,
+        n_units: int = 32,
+        duration_s: float = 120.0,
+        noise: float = 1.0,
+        seed: int = 0,
+        pitch_um: float = 0.0,
+    ):
         if not 1 <= n_units <= 1024:
             raise ValueError("n_units must be in 1..1024")
         if not 1.0 <= duration_s <= 3600.0:
@@ -69,6 +77,16 @@ class SyntheticSource(NeuralSource):
             self._spikes.append(times[keep])
         self._template = _spike_template(RAW_FS)
         self._trials = self._find_movements()
+        # With a pitch, channels sit on a linear probe and unit u lives at contact u, so its spikes
+        # also appear, attenuated, on nearby contacts; without one, every channel is an isolated electrode.
+        self.pitch_um = float(pitch_um)
+        self._positions = np.c_[np.zeros(n_units), self.pitch_um * np.arange(n_units)] if pitch_um > 0 else None
+        if self._positions is not None:
+            d = np.abs(self._positions[:, 1][:, None] - self._positions[:, 1][None, :])
+            self._mix = np.exp(-d / SPREAD_UM)  # [channel, unit] amplitude fraction
+            self._mix[self._mix < 0.05] = 0.0
+        else:
+            self._mix = np.eye(n_units)
 
     def _find_movements(self) -> dict[str, np.ndarray]:
         speed = np.linalg.norm(self._vel, axis=1)
@@ -89,7 +107,8 @@ class SyntheticSource(NeuralSource):
     def info(self) -> SessionInfo:
         return SessionInfo(
             source=self.kind,
-            uri=f"synthetic://units={self.n_units}&duration={self.duration_s}&noise={self.noise}&seed={self.seed}",
+            uri=f"synthetic://units={self.n_units}&duration={self.duration_s}&noise={self.noise}&seed={self.seed}"
+            + (f"&pitch_um={self.pitch_um:g}" if self._positions is not None else ""),
             duration_s=self.duration_s,
             n_channels=self.n_units,
             raw_fs_hz=RAW_FS,
@@ -99,7 +118,13 @@ class SyntheticSource(NeuralSource):
             behavior_units={"cursor_velocity": "cm/s", "cursor_position": "cm"},
             license="CC0-1.0 (generated)",
             notes="Simulated data. One unit per channel, cosine-tuned to cursor velocity. "
-            "Trials are detected movement onsets, grouped by reach direction.",
+            "Trials are detected movement onsets, grouped by reach direction."
+            + (
+                f" Channels form a linear probe at {self.pitch_um:g} um pitch, so units bleed onto neighbours."
+                if self._positions is not None
+                else ""
+            ),
+            has_probe_geometry=self._positions is not None,
             **describe_trials(self._trials),
         )
 
@@ -121,13 +146,24 @@ class SyntheticSource(NeuralSource):
         n = round((t1 - t0) * RAW_FS)
         rng = np.random.default_rng((self.seed, int(t0 * 1000)))
         out = (NOISE_UV * self.noise * rng.standard_normal((n, len(channels)))).astype(np.float32)
+        waves: dict[int, np.ndarray] = {}
+
+        def wave(unit: int) -> np.ndarray:
+            if unit not in waves:
+                s = self._spikes[unit]
+                idx = ((s[(s >= t0) & (s < t1)] - t0) * RAW_FS).astype(int)
+                train = np.zeros(n, dtype=np.float32)
+                train[idx[idx < n]] = SPIKE_AMP_UV
+                waves[unit] = np.convolve(train, self._template, mode="same")
+            return waves[unit]
+
         for j, ch in enumerate(channels):
-            s = self._spikes[ch]
-            idx = ((s[(s >= t0) & (s < t1)] - t0) * RAW_FS).astype(int)
-            train = np.zeros(n, dtype=np.float32)
-            train[idx[idx < n]] = SPIKE_AMP_UV
-            out[:, j] += np.convolve(train, self._template, mode="same")
+            for unit in np.flatnonzero(self._mix[ch]):
+                out[:, j] += self._mix[ch, unit] * wave(unit)
         return out
+
+    def channel_positions(self) -> np.ndarray | None:
+        return self._positions
 
     def behavior(self, name: str, t0: float, t1: float) -> tuple[np.ndarray, np.ndarray]:
         t0, t1 = self._clip(t0, t1)

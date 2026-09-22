@@ -11,7 +11,7 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 
 ## Status
 
-v0.4, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, latent-factor models (GPFA, PCA), and figures. Planned: probe geometry for sorting.
+v0.4, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, latent-factor models (GPFA, PCA), probe geometry, and figures.
 
 ## Install and run
 
@@ -81,7 +81,10 @@ GPFA is implemented from the paper's equations in numpy and scipy (EM over loadi
 | `get_session_info` | Channels, rates, behaviour signals, licence, citation |
 | `get_signal_quality` | Noise, SNR, dead/noisy channels |
 | `detect_spikes` | Threshold crossings; precision/recall when truth exists |
-| `sort_spikes` | Spike-sort a broadband window with spikeinterface (`sort` extra); the session then uses the sorted units |
+| `sort_spikes` | Spike-sort a broadband window with spikeinterface (`sort` extra), using probe geometry when known; the session then uses the sorted units |
+| `set_probe_geometry` | Supply contact positions for a session whose file has none: Utah, grid, linear, tetrode layouts or explicit coordinates |
+| `get_probe` | Contact positions and brain-area labels per channel |
+| `plot_probe` | Figure: array map, contacts coloured by firing rate, sorted units per contact |
 | `get_firing_rates` | Population rate summary |
 | `fit_decoder` | Ridge or Kalman, scored on held-out data; hyperparameters chosen inside the training split |
 | `decode_window` | Decoded-vs-true preview for a window |
@@ -104,7 +107,9 @@ Tools return summaries, never raw arrays, so results fit in a model's context.
 | `lsl` | the `lsl` live source | `uvx --with 'ephys-mcp[lsl]' ephys-mcp` |
 | `sort` | `sort_spikes` via spikeinterface's built-in sorters (spykingcircus2, tridesclous2); about 330 MB of dependencies | `uvx --with 'ephys-mcp[sort]' ephys-mcp` |
 
-Sorting treats channels as independent electrodes because sources carry no probe geometry yet, so it suits single-electrode arrays rather than dense probes. On the simulator, spykingcircus2 recovers every unit with recall above 0.95.
+Sorting uses the session's probe geometry, from the file's electrode table or from `set_probe_geometry`, so contacts under 100 µm apart are sorted jointly. This matters on dense probes: on a simulated 20 µm laminar probe, sorting with the true geometry finds the 12 real units, while treating contacts as independent reports 15, counting the same unit again on neighbouring contacts. Without geometry, channels are placed far apart and treated as isolated electrodes. On the simulator, spykingcircus2 recovers every unit with recall above 0.95.
+
+Brain-area labels come from the NWB electrodes table when present (MC_Maze reports PMd and M1); `get_probe` lists them per channel so an analysis can be restricted to one area with the `units` argument. Note that none of the DANDI datasets tried so far stores contact coordinates, so for those `set_probe_geometry` is the way to supply an array layout.
 
 Plot tools return the PNG inline, so a vision-capable model can read the figure, and also save it under `~/.cache/ephys-mcp/plots` (override with `EPHYS_MCP_OUTPUT_DIR`). Figures use a categorical palette checked for colour-blind separation, with direct labels so identity never rests on colour alone.
 

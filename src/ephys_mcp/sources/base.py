@@ -39,6 +39,8 @@ class SessionInfo:
     behavior_units: dict[str, str] = field(default_factory=dict)
     recorded_fraction: float = 1.0  # share of the session covered by valid_intervals
     amplitude_unit: str = "uV"  # unit of read_raw values; uncalibrated sources say so
+    has_probe_geometry: bool = False
+    channel_areas: dict[str, int] = field(default_factory=dict)  # brain area label -> number of channels/units
     n_trials: int = 0
     event_columns: list[str] = field(default_factory=list)  # trial columns holding event times
     group_columns: list[str] = field(default_factory=list)  # trial columns usable to group trials
@@ -78,6 +80,14 @@ class NeuralSource(ABC):
         """
         info = self.info()
         return np.array([[info.t_start_s, info.t_start_s + info.duration_s]])
+
+    def channel_positions(self) -> np.ndarray | None:
+        """(n_channels, 2) contact positions in micrometres, or None when unknown."""
+        return None
+
+    def channel_areas(self) -> list[str] | None:
+        """Brain area label per channel/unit, or None when unknown."""
+        return None
 
     def trials(self) -> dict[str, np.ndarray]:
         """Trial table as equal-length 1D columns. Columns of event times end in `_time`."""

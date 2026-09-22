@@ -11,8 +11,9 @@ SOURCES: dict[str, dict] = {
     "synthetic": {
         "cls": SyntheticSource,
         "status": "available",
-        "description": "Simulated motor-cortex units tuned to 2D cursor velocity, with ground truth.",
-        "params": {"n_units": 32, "duration_s": 120.0, "noise": 1.0, "seed": 0},
+        "description": "Simulated motor-cortex units tuned to 2D cursor velocity, with ground truth. "
+        "pitch_um > 0 puts channels on a dense linear probe where units bleed onto neighbours.",
+        "params": {"n_units": 32, "duration_s": 120.0, "noise": 1.0, "seed": 0, "pitch_um": 0.0},
     },
     "nwb": {
         "cls": NwbSource,
