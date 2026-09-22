@@ -11,7 +11,7 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 
 ## Status
 
-v0.3, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, latent-factor models (GPFA, PCA), and figures. Planned: probe geometry for sorting.
+v0.4, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, latent-factor models (GPFA, PCA), and figures. Planned: probe geometry for sorting.
 
 ## Install and run
 
