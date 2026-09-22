@@ -7,7 +7,7 @@ authors:
 repository-code: "https://github.com/happyc0der/ephys-mcp"
 url: "https://github.com/happyc0der/ephys-mcp"
 license: CC0-1.0
-version: 0.5.0
+version: 0.5.1
 date-released: 2026-09-22
 keywords:
   - brain-computer interface
