@@ -11,7 +11,7 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 
 ## Status
 
-v0.3, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, and figures. Planned: latent-factor models, probe geometry.
+v0.3, early. Working today: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, latent-factor models (GPFA, PCA), and figures. Planned: probe geometry for sorting.
 
 ## Install and run
 
@@ -66,6 +66,8 @@ Reference results, all simple causal linear baselines rather than state of the a
 
 Decoder hyperparameters (ridge strength, the neural lead for Kalman) are chosen by blocked cross-validation inside the training split. Ridge history is 0.5 s of spike counts whatever the bin size.
 
+GPFA is implemented from the paper's equations in numpy and scipy (EM over loadings, offsets, noise and per-factor timescales; no deep-learning dependency), and runs in seconds on a hundred trials. On the simulator, whose true latent is 2-D cursor velocity, it finds two dominant factors that explain velocity with R² 0.95 (PCA: 0.68). On MC_Maze_Small it shows the rotating population trajectory around movement onset that motor cortex is known for. LFADS-class models are out of scope: they need a training run of minutes and a deep-learning stack.
+
 ## Tools
 
 | Tool | Purpose |
@@ -85,6 +87,8 @@ Decoder hyperparameters (ridge strength, the neural lead for Kalman) are chosen 
 | `decode_window` | Decoded-vs-true preview for a window |
 | `evaluate_cross_session` | Fit on one session, score unchanged on others: does a decoder survive to a later day? Honours FALCON's `eval_mask` |
 | `get_psth` | Firing aligned to a trial event, optionally grouped by a trial column or limited to some units |
+| `fit_latent_factors` | GPFA (Yu et al. 2009) or PCA on trial-aligned activity: single-trial latent trajectories, variance per factor, timescales, and how well the top factors explain a velocity signal |
+| `plot_latent_factors` | Figure: top three factors over time, the factor-1/factor-2 state space, and variance per factor |
 | `plot_psth` | Figure: PSTH per group with SEM, above a unit-by-time heatmap of change from baseline |
 | `plot_raster` | Figure: spike raster, unrecorded spans shaded |
 | `plot_decoding` | Figure: decoded against actual behaviour, one panel per dimension |

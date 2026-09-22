@@ -186,3 +186,74 @@ def plot_decode(stem: str, title: str, t, true: np.ndarray, decoded: np.ndarray,
     _title_and_legend(axes[0, 0], title, 2)
     axes[-1, 0].set_xlabel("Time (s)")
     return _save(fig, stem)
+
+
+def plot_latents(
+    stem: str,
+    title: str,
+    t,
+    traj: np.ndarray,
+    labels: np.ndarray,
+    variance: np.ndarray,
+    max_trials: int,
+    variance_label: str = "Variance explained (%)",
+) -> Path:
+    """traj: (n_trials, n_bins, n_factors); labels: group per trial."""
+    groups = sorted(set(labels.tolist()))
+    colour = {g: CATEGORICAL[i % len(CATEGORICAL)] for i, g in enumerate(groups)}
+    n_show = min(3, traj.shape[2])
+    fig = plt.figure(figsize=(9.6, 2.2 + 1.7 * n_show))
+    grid = fig.add_gridspec(n_show, 2, width_ratios=[1.35, 1], hspace=0.28, wspace=0.28)
+    rng = np.random.default_rng(0)
+    drawn = rng.choice(len(labels), size=min(max_trials, len(labels)), replace=False)
+    axes = [fig.add_subplot(grid[k, 0]) for k in range(n_show)]
+    for k, ax in enumerate(axes):
+        for i in drawn:
+            ax.plot(t, traj[i, :, k], color=colour[labels[i]], alpha=0.18, linewidth=0.8)
+        for g in groups:
+            ax.plot(t, traj[labels == g, :, k].mean(axis=0), color=colour[g], linewidth=2.2, label=g)
+        _event_line(ax)
+        ax.grid(axis="y")
+        ax.margins(x=0)
+        ax.set_ylabel(f"Factor {k + 1}")
+        if k < n_show - 1:
+            ax.tick_params(labelbottom=False)
+    axes[-1].set_xlabel("Time from event (s)")
+    _title_and_legend(axes[0], title, min(len(groups), 4) if len(groups) > 1 else 0)
+
+    if traj.shape[2] >= 2:
+        state = fig.add_subplot(grid[: max(1, n_show - 1), 1])
+        for i in drawn:
+            state.plot(traj[i, :, 0], traj[i, :, 1], color=colour[labels[i]], alpha=0.15, linewidth=0.7)
+        zero = int(np.argmin(np.abs(t)))
+        for g in groups:
+            m = traj[labels == g].mean(axis=0)
+            state.plot(m[:, 0], m[:, 1], color=colour[g], linewidth=2.2)
+            state.plot(m[0, 0], m[0, 1], "o", color=colour[g], markersize=5, markeredgecolor=SURFACE)
+            state.plot(m[zero, 0], m[zero, 1], "s", color=colour[g], markersize=6, markeredgecolor=SURFACE)
+            state.plot(m[-1, 0], m[-1, 1], "^", color=colour[g], markersize=6, markeredgecolor=SURFACE)
+        state.set_xlabel("Factor 1")
+        state.set_ylabel("Factor 2")
+        state.set_title("State space · ○ start  ■ event  ▲ end", fontsize=9, fontweight="normal", color=INK_2)
+        state.grid(True)
+        state.set_aspect("equal", adjustable="datalim")
+
+    bars = fig.add_subplot(grid[-1, 1])
+    idx = np.arange(1, len(variance) + 1)
+    bars.bar(idx, 100 * variance, color=CATEGORICAL[0], width=0.7)
+    bars.set_xticks(idx)
+    bars.set_xlabel("Factor")
+    bars.set_ylabel(variance_label)
+    bars.grid(axis="y")
+    bars.margins(y=0.15)
+    for x, v in zip(idx, variance):
+        bars.annotate(
+            f"{100 * v:.1f}",
+            (x, 100 * v),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            fontsize=7,
+            color=INK_2,
+        )
+    return _save(fig, stem)

@@ -18,6 +18,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from . import plots
 from .processing.decode import DECODERS, r2_score
+from .processing.latent import MAX_FACTORS, fit_gpfa, fit_pca
+from .processing.latent import summarize as summarize_latent
 from .processing.psth import aligned_counts, compute_psth, modulation, summarize, usable_events
 from .processing.quality import signal_quality
 from .processing.rates import bin_spikes, firing_stats, resample_to
@@ -69,6 +71,7 @@ def tool(fn=None, **options):
 
 _sessions: dict[str, NeuralSource] = {}
 _decoders: dict[str, dict[str, Any]] = {}
+_latents: dict[str, dict[str, Any]] = {}
 
 
 def _session(session_id: str) -> NeuralSource:
@@ -140,6 +143,7 @@ def close_session(session_id: str) -> dict:
     _session(session_id).close()
     del _sessions[session_id]
     _decoders.pop(session_id, None)
+    _latents.pop(session_id, None)
     return {"closed": session_id}
 
 
@@ -479,6 +483,92 @@ def get_psth(
     return out
 
 
+def _behaviour_r2_from_latents(src: NeuralSource, groups: dict, t: np.ndarray, traj: np.ndarray) -> dict | None:
+    """How well the top-k factors linearly explain a velocity-like signal, if the session has one."""
+    signals = src.info().behavior_signals
+    name = next((n for n in signals if "vel" in n.lower()), None)
+    if name is None:
+        return None
+    events = np.concatenate(list(groups.values()))
+    bt, bv = src.behavior(name, events.min() + t[0] - 1, events.max() + t[-1] + 1)
+    if bt.size < 2:
+        return None
+    y = np.stack([resample_to(bt, bv, e + t) for e in events]).reshape(-1, bv.shape[1])
+    ok = np.isfinite(y).all(axis=1)
+    out = {"signal": name}
+    for k in sorted({1, 2, 3, traj.shape[2]}):
+        X = np.c_[traj[:, :, :k].reshape(-1, k), np.ones(len(y))][ok]
+        W = np.linalg.lstsq(X, y[ok], rcond=None)[0]
+        out[f"r2_top{k}"] = round(float(r2_score(y[ok], X @ W).mean()), 3)
+    return out
+
+
+@tool
+def fit_latent_factors(
+    session_id: str,
+    method: Literal["gpfa", "pca"] = "gpfa",
+    n_factors: int = 6,
+    event: str | None = None,
+    group_by: str | None = None,
+    t_before: float = 0.3,
+    t_after: float = 0.6,
+    bin_s: float = 0.02,
+    units: list[int] | None = None,
+) -> dict:
+    """Fit low-dimensional latent factors to trial-aligned population activity.
+
+    GPFA (Yu et al. 2009) gives denoised single-trial trajectories and a timescale per factor;
+    PCA is the fast, noisier baseline. Look for an elbow in variance_explained_per_factor to
+    judge dimensionality. If the session has a velocity-like signal, reports how well the top
+    factors explain it. Then plot_latent_factors draws the trajectories.
+    """
+    src = _session(session_id)
+    if not 1 <= n_factors <= MAX_FACTORS:
+        raise ValueError(f"n_factors must be in 1..{MAX_FACTORS}")
+    if not 0.005 <= bin_s <= 0.2:
+        raise ValueError("bin_s must be in 0.005..0.2")
+    event, groups, spikes, dropped = _aligned(src, event, group_by, t_before, t_after, units)
+    if n_factors >= len(spikes):
+        raise ValueError(f"n_factors must be below the number of units ({len(spikes)})")
+    events = np.concatenate(list(groups.values()))
+    labels = np.concatenate([[g] * len(v) for g, v in groups.items()])
+    t, counts = aligned_counts(spikes, events, (-t_before, t_after), bin_s)
+    counts = counts.transpose(0, 2, 1)  # (trials, bins, units)
+    if counts.shape[0] * counts.shape[1] > 200_000:
+        raise ValueError("too many trials x bins; shorten the window, raise bin_s or use fewer trials")
+    fit = fit_pca(counts, n_factors) if method == "pca" else fit_gpfa(counts, n_factors, bin_s)
+    _latents[session_id] = {"fit": fit, "t": t, "labels": labels, "event": event, "group_by": group_by}
+    out = {"event": event, "window_s": [-t_before, t_after], "events_dropped_unrecorded": dropped}
+    out.update(summarize_latent(fit, bin_s))
+    beh = _behaviour_r2_from_latents(src, groups, t, fit.trajectories)
+    if beh:
+        out["behaviour_explained"] = beh
+    mean = fit.trajectories.mean(axis=0)
+    step = max(1, len(t) // 15)
+    out["mean_trajectory_top3"] = [
+        {"t": round(float(t[i]), 3), "factors": np.round(mean[i, :3], 3).tolist()} for i in range(0, len(t), step)
+    ]
+    return out
+
+
+@tool(structured_output=False)
+def plot_latent_factors(session_id: str, max_trials_drawn: int = 40) -> list:
+    """Figure: the top three latent factors over time (single trials thin, group means bold), the
+    trajectory in the plane of the first two factors, and variance explained per factor.
+    Requires fit_latent_factors first."""
+    if session_id not in _latents:
+        raise ValueError("no latent model fitted; call fit_latent_factors first")
+    L = _latents[session_id]
+    fit = L["fit"]
+    title = f"{fit.method.upper()} latents around {L['event']} · {fit.trajectories.shape[0]} trials"
+    path = plots.plot_latents(
+        f"{session_id}-latents", title, L["t"], fit.trajectories, L["labels"], fit.variance_explained, max_trials_drawn
+    )
+    return _figure(
+        path, method=fit.method, n_factors=int(fit.trajectories.shape[2]), groups=sorted(set(L["labels"].tolist()))
+    )
+
+
 def _figure(path, **summary) -> list:
     return [{"saved_to": str(path), **summary}, Image(path=path)]
 
@@ -601,7 +691,8 @@ def analyze_session(session_id: str) -> str:
         f"Analyse session {session_id}: get_session_info, then get_signal_quality, then get_firing_rates. "
         "If a cursor or hand velocity signal exists, fit_decoder with kind='kalman' and with kind='ridge', "
         "compare held-out R², and plot_decoding on a test segment. If the session has trial events, "
-        "get_psth and plot_psth grouped by a sensible column. Summarise findings and caveats."
+        "get_psth and plot_psth grouped by a sensible column, then fit_latent_factors (gpfa) and "
+        "plot_latent_factors to see population dynamics. Summarise findings and caveats."
     )
 
 
