@@ -3,7 +3,14 @@ name = "ephys-mcp"
 version = "0.1.0"
 description = "MCP server for read-only analysis of intracortical (spike-level) brain-computer-interface recordings"
 license = "CC0-1.0"
-keywords = ["mcp", "bci", "electrophysiology", "neuroscience", "spikes"]
+keywords = ["mcp", "bci", "electrophysiology", "neuroscience", "spikes", "nwb", "dandi"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
 readme = "README.md"
 authors = [
     { name = "happyc0der", email = "Keshav.Rajput4@gmail.com" }
@@ -19,6 +26,11 @@ dependencies = [
     "remfile>=0.1.14",
     "scipy>=1.18.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/happyc0der/ephys-mcp"
+Repository = "https://github.com/happyc0der/ephys-mcp"
+Issues = "https://github.com/happyc0der/ephys-mcp/issues"
 
 [project.scripts]
 ephys-mcp = "ephys_mcp.server:main"

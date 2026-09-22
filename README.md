@@ -13,22 +13,21 @@ v0.1, early. Working today: local NWB files, local broadband WAV recordings, str
 
 ## Install and run
 
-```bash
-uv sync
-uv run ephys-mcp        # stdio transport
-```
+Needs [uv](https://docs.astral.sh/uv/). No install step: `uvx ephys-mcp` fetches the package and starts the server on stdio.
 
 Claude Code:
 
 ```bash
-claude mcp add ephys -- uv --directory /path/to/ephys-mcp run ephys-mcp
+claude mcp add ephys -- uvx ephys-mcp
 ```
 
 Claude Desktop (`claude_desktop_config.json`):
 
 ```json
-{ "mcpServers": { "ephys": { "command": "uv", "args": ["--directory", "/path/to/ephys-mcp", "run", "ephys-mcp"] } } }
+{ "mcpServers": { "ephys": { "command": "uvx", "args": ["ephys-mcp"] } } }
 ```
+
+From a checkout, use `uv run ephys-mcp` instead, or `uv --directory /path/to/ephys-mcp run ephys-mcp` in the configs above.
 
 Then ask, for real data: *"Find a small motor cortex dataset on DANDI, open it, and tell me how well hand velocity can be decoded."*
 Or offline: *"Open a synthetic session, check signal quality, fit a Kalman decoder and show me a decoded window."*
