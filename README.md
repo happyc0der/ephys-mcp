@@ -9,6 +9,14 @@ Existing BCI MCP servers target scalp EEG. This one targets the kind of data a h
 > Research and education software. **Not a medical device. Not for clinical use.**
 > Not affiliated with or endorsed by Neuralink Corp. or any other implant manufacturer.
 
+## Example output
+
+Figures from the built-in synthetic source (32 units, 300 s, seed 2), produced by the server's own plot tools.
+
+| ![PSTH by reach direction](docs/screenshots/psth-by-direction.png) | ![Kalman decoder on held-out data](docs/screenshots/kalman-decoding.png) |
+| --- | --- |
+| `plot_psth` grouped by reach direction: population rate per direction (mean ± SEM over 166 trials) above a unit-by-time heatmap of change from baseline | `plot_decoding` after `fit_decoder(kind="kalman")`: decoded against actual cursor velocity on a held-out 10 s window, R² 0.90 (x) and 0.83 (y) |
+
 ## Status
 
 v0.5. The planned feature set is complete: local NWB files, local broadband WAV recordings, live Lab Streaming Layer streams, streaming from the DANDI Archive, a synthetic motor-cortex source with ground truth, spike detection, quality metrics, ridge and Kalman decoders, trial-aligned PSTHs, spike sorting, cross-session (FALCON-style) evaluation, latent-factor models (GPFA, PCA), probe geometry, and figures. 24 tools. Bug reports and feature requests go to [GitHub Issues](https://github.com/happyc0der/ephys-mcp/issues).
